@@ -16,5 +16,6 @@
 - Seller agent loop is manual (not the SDK tool runner) so each model call goes through a paid provider chosen by `chooseTier`. Append assistant content to `llmMessages` exactly as returned; never edit earlier turns.
 - Amounts never come from the model: `create_payment_link` takes a quote id, and a quote's price is set by the catalog or an accepted `propose_discount`.
 - Chat, dashboard and scripts share one SQLite file (`DB_PATH`, default `data/peaje-asa.db`). Build packages with `tsc -b` before running the Next apps; they load workspace packages from `dist`.
+- Dashboard (`apps/dashboard`): Peaje design system, dark (`className="dark"` on `<html>`). Every page, server action and route handler calls `requireOwner()` / `currentOwner()` from `lib/auth.ts`; `proxy.ts` is only an early redirect. Server actions call the agents; no money rule lives in the app.
 - Treasury plans from `ledger.cash()`, never the wallet balance. Approvals bind exact terms (hash) and are used once; payouts save `request_id` before creating the transfer and book at PAID.
 - Disputes: decision in `decideDispute` (policy); the model only writes the defense text. Match disputes to orders by `payment_intent_id`. Challenges at CHARGEBACK need `product_type`.

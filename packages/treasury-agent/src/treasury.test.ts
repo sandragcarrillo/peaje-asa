@@ -4,7 +4,7 @@ import type { Airwallex } from "@peaje-asa/airwallex";
 import { Ledger, OrderSigner } from "@peaje-asa/ledger";
 import { FakeMetalBridge } from "@peaje-asa/metal";
 import { decideDispute, defaultPolicy as p, type DisputeFacts } from "@peaje-asa/policy";
-import { approvalTerms, planClose, reviewDisputes, runClose, sweepFloat, textPdf, TreasuryStore, unansweredAfterEscalation, type AwxDispute, type ChatLine, type Obligation } from "./index.js";
+import { acceptAdvance, advanceDue, advanceOffer, approvalTerms, planClose, reviewDisputes, runClose, sweepFloat, textPdf, TreasuryStore, unansweredAfterEscalation, type AwxDispute, type ChatLine, type Obligation } from "./index.js";
 
 process.env.ORDER_SIGNING_KEY ??= OrderSigner.generateEnvValue();
 const at = "2026-11-02T00:00:00.000Z";
@@ -36,12 +36,23 @@ function sell(ledger: Ledger, orderId: string, amount: number, cogs: number, int
 }
 
 test("planClose: the reserve binds, approvals keep their cash set aside, the owner gets what's left", () => {
-  const supplier: Obligation = { kind: "supplier", amount: 330, beneficiaryId: "s", reference: "Inventory" };
+  const supplier: Obligation = { kind: "supplier", amount: 330, flexible: true, beneficiaryId: "s", reference: "Inventory" };
   const owner: Obligation = { kind: "owner_payout", amount: 1000, flexible: true, beneficiaryId: "o", reference: "Profit" };
 
   const short = planClose(600, [supplier, owner], p); // 100 above the 500 reserve
-  assert.equal(short.defer.length, 2);
-  assert.equal(short.reserveAfter, 600);
+  // Inventory gets what fits above the reserve; the owner waits until it's paid in full.
+  assert.deepEqual(short.pay.map((o) => [o.kind, o.amount]), [["supplier", 100]]);
+  assert.deepEqual(short.defer.map((d) => d.obligation.kind), ["owner_payout"]);
+  assert.equal(short.reserveAfter, 500);
+
+  const empty = planClose(500, [supplier, owner], p); // nothing above the reserve
+  assert.deepEqual(empty.defer.map((d) => d.obligation.kind), ["supplier", "owner_payout"]);
+  assert.match(empty.defer[1].why, /before profit/);
+
+  const repayment: Obligation = { kind: "advance_repayment", amount: 200, beneficiaryId: "l", reference: "Advance" };
+  const loan = planClose(650, [repayment, supplier], p); // 150 above the reserve
+  assert.deepEqual(loan.pay.map((o) => [o.kind, o.amount]), [["supplier", 150]]);
+  assert.deepEqual(loan.defer.map((d) => d.obligation.kind), ["advance_repayment"], "the advance is repaid in full or not at all");
 
   const plan = planClose(1200, [owner, supplier], p); // 700 above the reserve
   // Both above the 300 threshold; the owner's share is sized after the supplier's reservation.
@@ -184,4 +195,40 @@ test("evidence PDF has a valid cross-reference table", () => {
   const offsets = [...pdf.slice(xref).matchAll(/^(\d{10}) 00000 n $/gm)].map((m) => Number(m[1]));
   offsets.forEach((o, i) => assert.equal(pdf.slice(o, o + `${i + 1} 0 obj`.length), `${i + 1} 0 obj`));
   assert.match(pdf, /\/Count 2/);
+});
+
+test("advance: sized from recent profit and disputes, accepted only as shown, repaid before the owner", async () => {
+  const ledger = new Ledger("USD", ":memory:");
+  const store = new TreasuryStore(":memory:");
+  const recent = new Date().toISOString();
+  const order = (id: string, amount: number, cogs: number, at = recent) => {
+    ledger.addOrder(OrderSigner.fromEnv().sign({ orderId: id, customerRef: id, items: [{ sku: "X", qty: 1, unitPrice: amount }], total: amount, currency: "USD", paymentIntentId: `int_${id}`, createdAt: at }));
+    ledger.add({ kind: "sale", orderId: id, amount, cogs, currency: "USD", at });
+  };
+  order("a", 1000, 600); order("b", 500, 300); order("c", 100, 60); order("d", 400, 240); // net 800
+  ledger.add({ kind: "dispute", disputeId: "dst_1", orderId: "c", amount: 100, currency: "USD", stage: "RFI", status: "accepted", at: recent });
+  ledger.add({ kind: "refund", orderId: "c", amount: 100, currency: "USD", at: recent }); // net 700, 1 of 4 given back
+
+  const offer = advanceOffer(ledger, p);
+  assert.equal(offer.netProfit, 700);
+  assert.equal(offer.disputeRate, 0.25);
+  assert.equal(offer.amount, 260); // 700 * 0.5 * 0.75 = 262.5, down to 10
+  assert.equal(offer.fee, 15.6);
+  assert.equal(offer.lines.length, 4);
+
+  await assert.rejects(acceptAdvance(ledger, p, 300, async () => {}), /now 260/);
+  const credited: number[] = [];
+  await acceptAdvance(ledger, p, 260, async (a) => { credited.push(a); });
+  assert.deepEqual(credited, [260]);
+  assert.equal(ledger.advances().outstanding, 275.6);
+  assert.equal(advanceOffer(ledger, p).amount, 0, "no second advance while one is outstanding");
+
+  order("e", 2000, 1200, new Date(Date.now() + 1000).toISOString()); // after the advance: 10% of it is due, 200
+  assert.equal(advanceDue(ledger), 200);
+  const awx = fakeAwx();
+  const r = await runClose({ ledger, store, awx: awx as unknown as Airwallex, policy: { ...p, reserveFloor: 0, approvalThreshold: 10_000 }, beneficiaries: { ...ben, lender: "ben_lender" }, day: "2026-11-03" });
+  assert.deepEqual(r.paid.map((x) => x.kind), ["supplier", "advance_repayment", "owner_payout"]);
+  assert.equal(r.paid[1].amount, 200);
+  assert.equal(ledger.advances().outstanding, 75.6);
+  assert.equal(ledger.pnl().financingCosts, 15.6);
 });

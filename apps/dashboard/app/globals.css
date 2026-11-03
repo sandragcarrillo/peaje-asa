@@ -1,0 +1,231 @@
+@import "tailwindcss";
+
+/*
+ * Peaje design system (usepeaje.com dashboard): cream paper, ink and the Peaje green.
+ * The accent is a dot, not a layer: status dots, amounts, highlights.
+ */
+:root {
+  --crema: #fdf9f0;
+  --crema-2: #f7f3ea;
+  --crema-3: #f2ede4;
+  --tinta: #1c1b19;
+  --tinta-suave: #2a2825;
+  --negro: #000000;
+  --verde: #a2dae2;
+  --verde-profundo: #1f7280;
+  --verde-oscuro: #14545e;
+  --gris-texto: #494740;
+  --gris-tenue: #7a776f;
+  --linea-clara: #cbc6bd;
+  --linea-oscura: #3a3833;
+  --lila: #b8aff0;
+
+  --bg: var(--crema);
+  --panel: var(--crema-2);
+  --panel-2: var(--crema-3);
+  --border: var(--linea-clara);
+  --text: #1c1c16;
+  --muted: var(--gris-texto);
+  --faint: var(--gris-tenue);
+  --accent: var(--verde-profundo);
+  --accent-text: #fff;
+}
+
+.dark {
+  --bg: #161512;
+  --panel: #201f1c;
+  --panel-2: #262521;
+  --border: #38362f;
+  --text: #f4f0e7;
+  --muted: #a49e92;
+  --faint: #7a776f;
+  --accent: var(--verde);
+  --accent-text: var(--tinta);
+}
+
+.isla-tinta {
+  --bg: var(--tinta);
+  --panel: #24231f;
+  --panel-2: var(--tinta-suave);
+  --border: var(--linea-oscura);
+  --text: #f4f0e7;
+
+  --muted: #c9c4ba;
+  --faint: #6e6a62;
+  --accent: var(--verde);
+  --accent-text: var(--tinta);
+}
+
+
+.isla-crema {
+  --bg: var(--crema);
+  --panel: var(--crema-2);
+  --panel-2: var(--crema-3);
+  --border: var(--linea-clara);
+  --text: #1c1c16;
+  --muted: var(--gris-texto);
+  --faint: var(--gris-tenue);
+  --accent: var(--verde-profundo);
+  --accent-text: #fff;
+}
+
+.dark .isla-crema {
+  --bg: #161512;
+  --panel: #201f1c;
+  --panel-2: #262521;
+  --border: #38362f;
+  --text: #f4f0e7;
+  --muted: #a49e92;
+  --faint: #7a776f;
+  --accent: var(--verde);
+  --accent-text: var(--tinta);
+}
+
+.dark .isla-tinta {
+  --bg: #211f1c;
+  --panel: #2a2824;
+  --panel-2: #312f2a;
+  --border: #403d36;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
+  --color-crema: var(--crema);
+  --color-tinta: var(--tinta);
+  --color-tinta-suave: var(--tinta-suave);
+  --color-lila: var(--lila);
+  --color-panel-2: var(--panel-2);
+  --color-faint: var(--faint);
+  --color-negro: var(--negro);
+  --color-linea-clara: var(--linea-clara);
+  --font-sans: var(--font-grotesca);
+  --font-mono: var(--font-chrome);
+}
+
+@layer base {
+  :root {
+    --radio: 6px;
+  }
+  .border,
+  button,
+  input,
+  select,
+  textarea,
+  details {
+    border-radius: var(--radio);
+  }
+}
+
+@theme {
+  --radius-lg: 6px;
+}
+
+/* Buttons: one system. Mono bold, sentence case, 6px corners. */
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radio);
+    padding: 0.7rem 1.25rem;
+    font-family: var(--font-chrome), ui-monospace, monospace;
+    font-size: 0.875rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+    text-transform: none;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 120ms, border-color 120ms, color 120ms, opacity 120ms;
+  }
+  .btn:disabled,
+  .btn[aria-disabled='true'] {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .btn-primario {
+    border-color: var(--text);
+    background: var(--text);
+    color: var(--bg);
+  }
+  .btn-primario::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    flex-shrink: 0;
+    background: var(--accent);
+  }
+  .btn-primario:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+  .btn-secundario {
+    background: transparent;
+    color: var(--text);
+  }
+  .btn-secundario:hover:not(:disabled) {
+    border-color: var(--text);
+  }
+  .btn-chico {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.75rem;
+  }
+  @media (max-width: 639px) {
+    .btn {
+      white-space: normal;
+      text-align: center;
+    }
+    .btn-chico {
+      min-height: 2.5rem;
+    }
+  }
+  .btn-ancho {
+    width: 100%;
+  }
+  .btn-icono {
+    padding: 0.5rem;
+    aspect-ratio: 1;
+  }
+}
+
+/* Small mono labels (eyebrows, nav, footer): never under 13px. */
+@utility etiqueta {
+  font-family: var(--font-chrome), ui-monospace, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  letter-spacing: 0.02em;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+h1, h2 {
+  letter-spacing: -0.02em;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.scroll-thin:hover {
+  scrollbar-color: var(--border) transparent;
+}

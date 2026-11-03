@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { aiBudgetFor, checkOffer, chooseTier, defaultPolicy as p, expectedMargin, findProduct, lowestAutoPrice } from "./index.js";
+import { aiBudgetFor, checkOffer, chooseTier, defaultPolicy as p, expectedMargin, findProduct, lowestAutoPrice, planRebalance } from "./index.js";
 
 const offers = {
   cheap: { price: 0.01, latencyMs: 300 },
@@ -43,4 +43,24 @@ test("discount rules", () => {
   const b = findProduct("BEAN-HUILA-250")!; // 14 list, 6 cost
   assert.equal(lowestAutoPrice(b.listPrice, b.unitCost, p), 12.6); // 10% cap binds
   assert.deepEqual(checkOffer(b.listPrice, 11, b.unitCost, p), { ok: false, reason: "needs_owner_approval" });
+});
+
+test("planRebalance: spare budget moves to the agent that can't pay its runway; the total never grows", () => {
+  // runway: seller 100 calls, disputes 10
+  const calm = planRebalance([{ agent: "seller", budget: 6, spent: 1 }, { agent: "disputes", budget: 2, spent: 0.1 }], { seller: 0.01, disputes: 0.01 }, p);
+  assert.deepEqual(calm.changes, []);
+
+  // Cheapest model goes from 0.01 to 0.06: the seller needs 6 left and has 5.
+  const rise = planRebalance([{ agent: "seller", budget: 6, spent: 1 }, { agent: "disputes", budget: 2, spent: 0.1 }], { seller: 0.06, disputes: 0.06 }, p);
+  assert.deepEqual(rise.need, { seller: 6, disputes: 0.6 });
+  assert.deepEqual(rise.changes, [{ agent: "disputes", from: 2, to: 1 }, { agent: "seller", from: 6, to: 7 }], "the cut comes first");
+  assert.equal(rise.shortfall, 0);
+  const total = (cs: typeof rise.changes) => cs.reduce((s, c) => s + c.to - c.from, 0);
+  assert.equal(Math.round(total(rise.changes) * 100), 0);
+
+  // Not enough spare anywhere: move what there is, report the rest for the owner.
+  const tight = planRebalance([{ agent: "seller", budget: 6, spent: 3 }, { agent: "disputes", budget: 2, spent: 0.1 }], { seller: 0.06, disputes: 0.06 }, p);
+  assert.deepEqual(tight.changes, [{ agent: "disputes", from: 2, to: 0.7 }, { agent: "seller", from: 6, to: 7.3 }]);
+  assert.equal(tight.shortfall, 1.7);
+  assert.match(tight.why, /only the owner/);
 });

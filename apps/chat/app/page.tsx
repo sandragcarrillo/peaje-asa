@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-interface Line { from: "customer" | "agent" | "system"; text: string; at: string; tier?: "cheap" | "mid" | "premium"; cost?: number }
+interface Line { from: "customer" | "agent" | "owner" | "system"; text: string; at: string; tier?: "cheap" | "mid" | "premium"; cost?: number }
 interface View { id: string; status: string; transcript: Line[]; aiSpent: number; calls: number; error?: string }
 
 function newId() {
@@ -54,9 +54,9 @@ export default function Chat() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  // While a payment link is out, ask the server to check Airwallex every few seconds.
+  // While a payment link is out, ask the server to check Airwallex every few seconds; while the owner has the chat, look for their reply.
   useEffect(() => {
-    if (conv?.status !== "awaiting_payment") return;
+    if (conv?.status !== "awaiting_payment" && conv?.status !== "escalated") return;
     const t = setInterval(refresh, 3000);
     return () => clearInterval(t);
   }, [conv?.status, refresh]);
@@ -121,6 +121,7 @@ export default function Chat() {
               <div className="bubble">
                 <Linkified text={l.text} />
                 <div className="meta">
+                  {l.from === "owner" && <span className="chip owner">owner</span>}
                   {l.tier && <span className={`chip ${l.tier}`}>{l.tier}{l.cost !== undefined ? ` · $${l.cost.toFixed(2)}` : ""}</span>}
                   <span>{time(l.at)}</span>
                 </div>

@@ -125,3 +125,22 @@ test("a premium deal gets the premium tier; a price rise reroutes, then escalate
   assert.match(lines.at(-1)!.text, /owner/);
   assert.equal(payer.used.length, 3, "no model call after escalating");
 });
+
+test("the owner approves an escalated price: a quote at exactly those terms and its link go to the chat", async () => {
+  const { awx, store, agent } = setup([
+    call("a", "quote", { sku: "MACH-ESPRESSO-HOME", qty: 2 }),
+    call("b", "escalate_to_owner", { reason: "Wants 2 machines at 400", quote_id: "q1", requested_unit_price: 400 }),
+    text("I've asked the owner, they'll reply here."),
+  ]);
+  await agent.handleMessage("c3", "2 machines at 400 each?");
+  assert.equal(store.get("c3")!.status, "escalated");
+  await assert.rejects(agent.resolveEscalation("nope", "approved", "owner@shop"));
+
+  const c = await agent.resolveEscalation("c3", "approved", "owner@shop", "Deal, 400 each.");
+  assert.equal(c.status, "awaiting_payment");
+  assert.equal(awx.links[0].amount, 800);
+  assert.deepEqual(c.escalation?.resolution?.decision, "approved");
+  assert.equal(c.transcript.find((l) => l.from === "owner")?.text, "Deal, 400 each.");
+  assert.match(c.pendingNotes.at(-1)!, /owner approved 2 x Home espresso machine at 400/);
+  await assert.rejects(agent.resolveEscalation("c3", "declined", "owner@shop"), /not waiting/);
+});

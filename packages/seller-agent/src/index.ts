@@ -11,7 +11,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { Airwallex } from "@peaje-asa/airwallex";
 import type { Ledger, OrderSigner } from "@peaje-asa/ledger";
-import { PaidCallFailed, PriceAboveCap, type InferencePayer, type InferenceProvider, type Offer } from "@peaje-asa/metal";
+import { MandateRefused, PaidCallFailed, PriceAboveCap, type InferencePayer, type InferenceProvider, type Offer } from "@peaje-asa/metal";
 import { aiBudgetFor, chooseTier, findProduct, type ModelTier, type OwnerPolicy } from "@peaje-asa/policy";
 import type { Conversation, ConversationStore, Quote, TranscriptLine } from "./store.js";
 import { runTool, sellerTools, type ToolContext } from "./tools.js";
@@ -110,6 +110,51 @@ export class SellerAgent {
     });
   }
 
+  /** The owner writes to the customer. The chat stays with the owner if it was escalated. */
+  ownerReply(convId: string, text: string): Promise<Conversation> {
+    return this.serial(convId, async () => {
+      const c = this.deps.store.get(convId);
+      if (!c) throw new Error(`No conversation ${convId}`);
+      c.transcript.push({ from: "owner", text, at: now() });
+      c.pendingNotes.push(`The owner wrote to the customer: "${text}"`);
+      this.deps.store.save(c);
+      return c;
+    });
+  }
+
+  /**
+   * The owner's answer to an escalation. Approving creates a quote at exactly the escalated terms
+   * and sends its payment link; declining hands the chat back to the agent. Either way the agent
+   * learns what happened on the next turn.
+   */
+  resolveEscalation(convId: string, decision: "approved" | "declined", by: string, message?: string): Promise<Conversation> {
+    return this.serial(convId, async () => {
+      const c = this.deps.store.get(convId);
+      if (!c || c.status !== "escalated" || !c.escalation) throw new Error(`${convId} is not waiting for the owner`);
+      if (c.escalation.resolution) throw new Error(`${convId} was already ${c.escalation.resolution.decision}`);
+      if (message?.trim()) c.transcript.push({ from: "owner", text: message.trim(), at: now() });
+      const t = c.escalation.terms;
+      if (decision === "approved" && t) {
+        const p = findProduct(t.sku)!;
+        const q: Quote = { id: `q${c.quotes.length + 1}`, sku: t.sku, name: p.name, qty: t.qty, listPrice: p.listPrice, unitPrice: t.unitPrice, total: t.total, currency: t.currency, createdAt: now() };
+        c.quotes.push(q);
+        c.activeQuoteId = q.id;
+        c.escalation.resolution = { decision, by, at: now(), quoteId: q.id };
+        c.status = "open";
+        c.transcript.push({ from: "system", text: `Owner approved ${t.qty} x ${p.name} at ${t.unitPrice} ${t.currency}.`, at: now() });
+        await this.toolContext().createPaymentLink(c, q);
+        c.pendingNotes.push(`The owner approved ${t.qty} x ${p.name} at ${t.unitPrice} ${t.currency} (quote ${q.id}) and the payment link was sent.`);
+      } else {
+        c.escalation.resolution = { decision, by, at: now() };
+        c.status = "open";
+        c.transcript.push({ from: "system", text: decision === "approved" ? "The owner handed the chat back to the agent." : "The owner declined the request.", at: now() });
+        c.pendingNotes.push(decision === "approved" ? "The owner handed the conversation back to you." : `The owner declined the request (${c.escalation.reason}). Don't offer it again.`);
+      }
+      this.deps.store.save(c);
+      return c;
+    });
+  }
+
   private async serial<T>(convId: string, fn: () => Promise<T>): Promise<T> {
     const prev = this.locks.get(convId) ?? Promise.resolve();
     const run = prev.then(fn, fn);
@@ -143,9 +188,11 @@ export class SellerAgent {
   private async loop(c: Conversation) {
     const { policy, payer, providers } = this.deps;
     let failures = 0;
+    // Tiers Metal refused this turn under the seller's mandate (above its cap, say): not options until the next message.
+    const refused = new Set<string>();
 
     for (let i = 0; i < MAX_CALLS_PER_TURN; i++) {
-      const offers = await this.offers();
+      const offers = Object.fromEntries(Object.entries(await this.offers()).filter(([t]) => !refused.has(t)));
       const budget = aiBudgetFor(this.activeMargin(c), policy);
       const decision = chooseTier(budget, c.aiSpent, c.calls, offers, policy);
 
@@ -163,11 +210,16 @@ export class SellerAgent {
           { system: systemPrompt(this.deps.shopName ?? "Tostadero Andino"), tools: sellerTools, messages: c.llmMessages },
           round2(budget - c.aiSpent),
         );
-        this.bookAiCost(c, call.provider, call.pricePaid);
+        this.bookAiCost(c, call.provider, call.pricePaid, call.txHash);
         cost = call.pricePaid;
         message = call.result;
       } catch (e) {
         if (e instanceof PriceAboveCap) continue; // the price moved since we read it: plan again
+        if (e instanceof MandateRefused) {
+          refused.add(decision.tier);
+          c.mandateRefusals = [...(c.mandateRefusals ?? []), { tier: decision.tier, reason: e.reason, at: now() }];
+          continue;
+        }
         if (e instanceof PaidCallFailed) {
           this.bookAiCost(c, e.provider, e.pricePaid);
           if (++failures >= MAX_FAILED_CALLS_PER_TURN) throw e;
@@ -201,6 +253,9 @@ export class SellerAgent {
     }
   }
 
+  /** The providers' live terms, as the owner's dashboard shows them. */
+  currentOffers() { return this.offers(); }
+
   /** Current offers from every provider. One that doesn't answer is simply not an option this time. */
   private async offers(): Promise<Partial<Record<ModelTier, Offer>>> {
     const entries = await Promise.all(
@@ -227,9 +282,9 @@ export class SellerAgent {
     return q ? { quote: q } : undefined;
   }
 
-  private bookAiCost(c: Conversation, provider: string, amount: number) {
+  private bookAiCost(c: Conversation, provider: string, amount: number, txHash?: string) {
     const { ledger, policy } = this.deps;
-    ledger.add({ kind: "ai_cost", conversationId: c.id, provider, amount, currency: policy.currency, at: now() });
+    ledger.add({ kind: "ai_cost", conversationId: c.id, provider, amount, currency: policy.currency, at: now(), ...(txHash && { txHash }) });
     c.aiSpent = round2(c.aiSpent + amount);
     c.calls += 1;
   }

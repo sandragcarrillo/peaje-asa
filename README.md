@@ -44,8 +44,11 @@ providers/            three mock inference providers that answer with 402
 6. Money rails end to end (AI cost, card payment, signed order, owner payout): `npm run m1 -- --wait-link`, then pay the printed link with test card `4035 5010 0000 0008`, any future expiry and CVC.
 7. Add `ANTHROPIC_API_KEY` to `.env` (the mock providers forward paid calls to Claude), then start them: `npm run dev:providers`
 8. In another terminal, the customer chat: `npm run dev:chat` and open http://localhost:3000. Each agent bubble shows the tier that answered and what the call cost; the footer shows the conversation's AI spend. Conversations, orders and costs go to `data/peaje-asa.db` (override with `DB_PATH`).
-9. Treasury end to end (disputes, float sweep, close with approvals): `npm run m3`. Pay the four printed links with the test card; the script waits, then works the chargebacks, sweeps the AI float and runs the close. Its book is `data/m3.db`; rerunning resumes where it stopped.
-10. Tests (no keys needed): `npm test`
+8b. Metal (optional, everything runs on a fake payer without it): put your testnet endpoint in `METAL_RPC_URL`, then `npm run metal:setup`. It creates the business's Metal account, funds it from the faucet, and binds one mandate per agent (seller, disputes, treasury) with the caps and budgets in `packages/policy`. Restart the providers: they now sell over x402 on Metal, and the agents pay under their mandates. The dashboard's Agents page shows each mandate's spend from chain and rebalances them.
+9. Owner login for the dashboard: `npm run keys:owner -- you@example.com` (asks for a password, writes `OWNER_EMAIL`, `OWNER_PASSWORD_HASH` and `SESSION_SECRET` to `.env`). Then `npm run dev:dashboard` and open http://localhost:3001.
+10. The demo: with the providers, chat and dashboard running, `npm run demo -- --fresh`. Three customers chat with the real agent (a provider raises its price mid-conversation). Approve the café in Conversations, pay the printed links with the test card, then in the dashboard: Review disputes, Run close, approve, Sweep float, Advance. `--fresh` moves the old book to `data/backup-<time>/`.
+11. Treasury end to end (disputes, float sweep, close with approvals): `npm run m3`. Pay the four printed links with the test card; the script waits, then works the chargebacks, sweeps the AI float and runs the close. Its book is `data/m3.db`; rerunning resumes where it stopped.
+12. Tests (no keys needed): `npm test`
 
 Sandbox only. No real money.
 

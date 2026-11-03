@@ -7,15 +7,16 @@ import type { Airwallex } from "@peaje-asa/airwallex";
 import type { Ledger } from "@peaje-asa/ledger";
 import type { MetalBridge } from "@peaje-asa/metal";
 import { needsApproval, type OwnerPolicy } from "@peaje-asa/policy";
+import { advanceDue } from "./advance.js";
 import type { ApprovalTerms, Approval, Payout, TreasuryStore } from "./store.js";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const now = () => new Date().toISOString();
 
 export interface Obligation {
-  kind: "supplier" | "owner_payout";
+  kind: "supplier" | "advance_repayment" | "owner_payout";
   amount: number;
-  /** Pay what's available up to `amount` instead of all or nothing (the owner's profit). */
+  /** Pay what's available up to `amount` instead of all or nothing (inventory and the owner's profit). */
   flexible?: boolean;
   beneficiaryId: string;
   reference: string;
@@ -33,30 +34,34 @@ export interface ClosePlan {
 
 /**
  * Decide what to pay without breaking the reserve floor. Pure, testable.
- * Suppliers come before the owner. A payment waiting for approval keeps its cash set
- * aside, so approving it later can't break the reserve.
+ * Suppliers come before the owner. Inventory is paid in parts when cash is short, the advance
+ * in full. A payment waiting for approval keeps its cash set aside, so approving it later
+ * can't break the reserve.
  */
 export function planClose(cash: number, obligations: Obligation[], policy: OwnerPolicy): ClosePlan {
-  const order = { supplier: 0, owner_payout: 1 } as const;
+  const order = { supplier: 0, advance_repayment: 1, owner_payout: 2 } as const;
   const sorted = [...obligations].sort((a, b) => order[a.kind] - order[b.kind]);
   let available = round2(cash - policy.reserveFloor);
   const plan: ClosePlan = { cash, pay: [], needsApproval: [], defer: [], reserveAfter: cash };
-  let supplierUnpaid = false;
+  // Debts (inventory, the advance) come before profit: if one can't be paid, the owner waits.
+  let debtUnpaid = false;
   for (const o of sorted) {
-    if (o.kind === "owner_payout" && supplierUnpaid) {
-      plan.defer.push({ obligation: o, why: "inventory is paid before profit" });
+    if (o.kind === "owner_payout" && debtUnpaid) {
+      plan.defer.push({ obligation: o, why: "inventory and the advance are paid before profit" });
       continue;
     }
     const amount = round2(o.flexible ? Math.min(o.amount, available) : o.amount);
     if (amount < policy.minPayout) {
+      if (o.kind !== "owner_payout" && o.amount >= policy.minPayout) debtUnpaid = true;
       plan.defer.push({ obligation: o, why: o.amount < policy.minPayout ? "nothing owed" : `only ${Math.max(0, available)} above the ${policy.reserveFloor} reserve` });
       continue;
     }
     if (amount > available + 1e-9) {
       plan.defer.push({ obligation: o, why: `${amount} owed, ${Math.max(0, available)} available above the ${policy.reserveFloor} reserve` });
-      if (o.kind === "supplier") supplierUnpaid = true;
+      if (o.kind !== "owner_payout") debtUnpaid = true;
       continue;
     }
+    if (amount < o.amount && o.kind !== "owner_payout") debtUnpaid = true;
     const sized = { ...o, amount };
     (needsApproval(amount, policy) ? plan.needsApproval : plan.pay).push(sized);
     available = round2(available - amount);
@@ -65,14 +70,19 @@ export function planClose(cash: number, obligations: Obligation[], policy: Owner
   return plan;
 }
 
-/** What the books say is owed: inventory cost not yet paid, and profit not yet paid out or held for disputes. */
-export function obligationsFromLedger(ledger: Ledger, store: TreasuryStore, beneficiaries: { supplier: string; owner: string }, day: string): Obligation[] {
+/** Who gets paid. The lender is only needed once an advance was taken. */
+export interface Payees { supplier: string; owner: string; lender?: string }
+
+/** What the books say is owed: inventory cost not yet paid, the advance repayment due, and profit not yet paid out or held for disputes. */
+export function obligationsFromLedger(ledger: Ledger, store: TreasuryStore, beneficiaries: Payees, day: string): Obligation[] {
   const pnl = ledger.pnl();
   const inFlight = (kind: Payout["kind"]) => store.inFlight().filter((p) => p.kind === kind).reduce((s, p) => s + p.amount, 0);
   const supplierOwed = round2(pnl.cogs - pnl.paidToSuppliers - inFlight("supplier"));
   const ownerOwed = round2(pnl.netProfit - pnl.paidToOwner - inFlight("owner_payout") - ledger.openDisputeHold());
+  const repayment = round2(advanceDue(ledger) - inFlight("advance_repayment"));
   return [
-    { kind: "supplier", amount: Math.max(0, supplierOwed), beneficiaryId: beneficiaries.supplier, reference: `Inventory ${day}` },
+    { kind: "supplier", amount: Math.max(0, supplierOwed), flexible: true, beneficiaryId: beneficiaries.supplier, reference: `Inventory ${day}` },
+    ...(beneficiaries.lender && repayment > 0 ? [{ kind: "advance_repayment" as const, amount: repayment, beneficiaryId: beneficiaries.lender, reference: `Advance repayment ${day}` }] : []),
     { kind: "owner_payout", amount: Math.max(0, ownerOwed), flexible: true, beneficiaryId: beneficiaries.owner, reference: `Profit ${day}` },
   ];
 }
@@ -81,14 +91,16 @@ export const approvalTerms = (o: Obligation, policy: OwnerPolicy): ApprovalTerms
   ({ kind: o.kind, amount: o.amount, currency: policy.currency, counterparty: o.beneficiaryId, reference: o.reference });
 
 /** The sandbox accepts any reason string; production validates it, so recheck these before going live. */
-const TRANSFER_REASON: Record<Payout["kind"], string> = { supplier: "payment_to_supplier", owner_payout: "personal_remittance" };
+const TRANSFER_REASON: Record<Payout["kind"], string> = { supplier: "payment_to_supplier", advance_repayment: "loan_repayment", owner_payout: "personal_remittance" };
+const LEDGER_KIND = { supplier: "supplier_payment", advance_repayment: "advance_repayment", owner_payout: "owner_payout" } as const;
+const LABEL = { supplier: "Inventory payment", advance_repayment: "Advance repayment", owner_payout: "Profit payout" } as const;
 
 export interface CloseDeps {
   ledger: Ledger;
   store: TreasuryStore;
   awx: Airwallex;
   policy: OwnerPolicy;
-  beneficiaries: { supplier: string; owner: string };
+  beneficiaries: Payees;
   /**
    * Moves a created transfer to its end state. Sandbox transfers don't settle on their own, so the
    * script passes `awx.simulate.settleTransfer`; without it the close waits briefly and resumes next time.
@@ -118,7 +130,7 @@ export async function runClose(deps: CloseDeps): Promise<CloseResult> {
     const terms = approvalTerms(o, policy);
     const used = store.consumeApproval(terms);
     if (used) paid.push(await pay(deps, o, used.id));
-    else awaiting.push(store.requestApproval(terms, `${o.kind === "supplier" ? "Inventory payment" : "Profit payout"} of ${o.amount} ${policy.currency} is above the ${policy.approvalThreshold} approval threshold.`));
+    else awaiting.push(store.requestApproval(terms, `${LABEL[o.kind]} of ${o.amount} ${policy.currency} is above the ${policy.approvalThreshold} approval threshold.`));
   }
   for (const o of plan.pay) paid.push(await pay(deps, o));
   return { plan, paid, awaiting, resumed };
@@ -157,7 +169,7 @@ async function finish(deps: CloseDeps, p: Payout): Promise<Payout> {
     t = deps.settle ? await deps.settle(p.transferId!) : await deps.awx.waitForTransfer(p.transferId!, 10_000);
   }
   if (t.status === "PAID") {
-    deps.ledger.add({ kind: p.kind === "supplier" ? "supplier_payment" : "owner_payout", ref: p.transferId!, amount: p.amount, currency: p.currency, at: now() });
+    deps.ledger.add({ kind: LEDGER_KIND[p.kind], ref: p.transferId!, amount: p.amount, currency: p.currency, at: now() });
     p.status = "paid";
   } else if (t.status === "CANCELLED" || t.status === "FAILED") {
     p.status = "failed";

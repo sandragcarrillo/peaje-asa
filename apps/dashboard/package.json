@@ -1,0 +1,28 @@
+{
+  "name": "@peaje-asa/dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start -p 3001"
+  },
+  "dependencies": {
+    "@peaje-asa/airwallex": "*",
+    "@peaje-asa/ledger": "*",
+    "@peaje-asa/metal": "*",
+    "@peaje-asa/policy": "*",
+    "@peaje-asa/seller-agent": "*",
+    "@peaje-asa/treasury-agent": "*",
+    "next": "16.4.4",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "tailwindcss": "^4.3.4"
+  }
+}

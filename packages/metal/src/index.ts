@@ -1,7 +1,7 @@
 /**
  * Metal testnet side: paying inference providers in USDZ (Kit 12) and
- * agent spending mandates (Kit 11).
- * TODO: implement with @metalntwx/metal-pay (clearing wallet) and the metal-agent CLI.
+ * agent spending mandates (Kit 11). The real thing is in ./mandate.ts; the fakes below keep
+ * everything running without a Metal endpoint (tests, a fresh clone).
  * Field-level details: Metal console > API Docs (console-testnet.metalntwx.com).
  * Notes from the builder guide:
  * - A provider's price is whatever its next 402 offer says. Set maxAmount to the dearest price we accept.
@@ -22,6 +22,8 @@ export interface PaidCall<T> {
   provider: string;
   pricePaid: number; // USDZ major units (= USD, the business currency)
   result: T;
+  /** The settlement on Metal, when it was paid on chain. */
+  txHash?: string;
 }
 
 /** A provider's current 402 offer. */
@@ -83,3 +85,5 @@ export class FakeInferencePayer implements InferencePayer {
     return { provider: p.id, pricePaid: price, result: (await res.json()) as T };
   }
 }
+
+export * from "./mandate.js";

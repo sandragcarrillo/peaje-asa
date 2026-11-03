@@ -88,7 +88,7 @@ export class ProviderDisputeWriter implements DisputeWriter {
         system: "You write chargeback defense statements for a small online shop. Use only the facts given. Plain text, 120 words or fewer, no greeting, no Markdown. State what the cardholder claims, then why the evidence answers it.",
         messages: [{ role: "user", content: JSON.stringify({ dispute: { amount: d.amount, currency: d.currency, reason: d.reason.description, stage: d.stage }, order: { id: order.orderId, items: order.items, total: order.total, paidWith: order.paymentIntentId, signed: true }, facts, chat: chat?.filter((l) => l.from !== "system").slice(-12) }) }],
       }, budget);
-      ledger.add({ kind: "ai_cost", conversationId: `dispute:${d.id}`, provider: call.provider, amount: call.pricePaid, currency: policy.currency, at: now() });
+      ledger.add({ kind: "ai_cost", conversationId: `dispute:${d.id}`, provider: call.provider, amount: call.pricePaid, currency: policy.currency, at: now(), ...(call.txHash && { txHash: call.txHash }) });
       const text = (call.result.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim();
       return text || templateDefense(d, order, facts);
     } catch {
@@ -162,8 +162,8 @@ async function reviewOne(deps: DisputeDeps, d: AwxDispute): Promise<DisputeRevie
   const facts = gatherFacts(d, order, chat, ledger);
   // A payment the agent didn't sell (no order in these books) is the owner's, outside this queue.
   if (!order) return { dispute: d, facts, decision: { action: "ignore", why: "No agent order for this payment." } };
-  const record = (status: "open" | "challenged" | "accepted" | "escalated", note?: string) =>
-    ledger.add({ kind: "dispute", disputeId: d.id, orderId: order.orderId, amount: d.amount, currency: policy.currency, stage: d.stage, status, note, at: now() });
+  const record = (status: "open" | "challenged" | "accepted" | "escalated", note?: string, evidence?: { defense: string; fileId: string }) =>
+    ledger.add({ kind: "dispute", disputeId: d.id, orderId: order.orderId, amount: d.amount, currency: policy.currency, stage: d.stage, status, note, ...evidence, at: now() });
 
   const previous = ledger.disputes().find((x) => x.disputeId === d.id);
   if (!previous) record("open", `${d.reason.original_code} ${d.reason.description}`);
@@ -217,7 +217,7 @@ async function reviewOne(deps: DisputeDeps, d: AwxDispute): Promise<DisputeRevie
       receipt_documents: [file.file_id],
     },
   });
-  record("challenged", decision.why);
+  record("challenged", decision.why, { defense, fileId: file.file_id });
   return { dispute: d, orderId: order.orderId, facts, decision, fileId: file.file_id, defense };
 }
 

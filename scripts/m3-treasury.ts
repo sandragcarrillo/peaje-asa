@@ -18,7 +18,7 @@ import { Ledger, OrderSigner, type SignedOrder } from "@peaje-asa/ledger";
 import { FakeInferencePayer, FakeMetalBridge } from "@peaje-asa/metal";
 import { defaultPolicy, findProduct, type ModelTier } from "@peaje-asa/policy";
 import { ConversationStore, SellerAgent, type Conversation } from "@peaje-asa/seller-agent";
-import { ProviderDisputeWriter, reviewDisputes, runClose, sweepFloat, syncDisputeOutcomes, TreasuryStore, type DisputeReview } from "@peaje-asa/treasury-agent";
+import { ensurePayees, ProviderDisputeWriter, reviewDisputes, runClose, sweepFloat, syncDisputeOutcomes, TreasuryStore, usdGlobalAccount, type DisputeReview } from "@peaje-asa/treasury-agent";
 
 process.env.DB_PATH ??= "data/m3.db";
 const policy = defaultPolicy;
@@ -31,18 +31,6 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const SHOP = "Tostadero Andino";
 /** USDZ the owner put on Metal for the agents' model calls (fake bridge until M5). */
 const FLOAT_FUNDED = 20;
-
-// --- Payees. Synthetic accounts: a real ABA routing number (JPMorgan Chase) with made-up account numbers.
-const OWNER = {
-  entity_type: "PERSONAL", first_name: "Sandra", last_name: "Demo", date_of_birth: "1990-01-15", personal_email: "owner@example.com",
-  address: { street_address: "1 Main Street", city: "New York", state: "NY", postcode: "10001", country_code: "US" },
-  bank_details: { bank_country_code: "US", account_currency: "USD", account_name: "Sandra Demo", account_number: "123456789", account_routing_type1: "aba", account_routing_value1: "021000021", bank_account_category: "Checking" },
-};
-const SUPPLIER = {
-  entity_type: "COMPANY", company_name: "Andes Green Coffee Imports", business_email: "billing@example.com",
-  address: { street_address: "200 Harbor Way", city: "Miami", state: "FL", postcode: "33132", country_code: "US" },
-  bank_details: { bank_country_code: "US", account_currency: "USD", account_name: "Andes Green Coffee Imports", account_number: "987654321", account_routing_type1: "aba", account_routing_value1: "021000021", bank_account_category: "Checking" },
-};
 
 // --- Seeded chats (what the seller agent would have produced) and what happened after the sale.
 interface Case {
@@ -102,8 +90,7 @@ const show = (rs: DisputeReview[]) => rs.forEach((r) =>
 
 try {
   // --- 1. Sales
-  const owner = await awx.ensureBeneficiary(OWNER, "Peaje ASA owner (demo)");
-  const supplier = await awx.ensureBeneficiary(SUPPLIER, "Peaje ASA supplier (demo)");
+  const { owner, supplier } = await ensurePayees(awx);
   console.log(`0. Owner beneficiary ${owner}, supplier beneficiary ${supplier}`);
 
   for (const k of CASES) {
@@ -179,11 +166,10 @@ try {
   }
 
   // --- 4. Metal float back to Airwallex
-  const ga: any = ((await awx.listGlobalAccounts()) as any).items?.find((g: any) => g.status === "ACTIVE" && g.required_features?.some((f: any) => f.currency === "USD"));
-  if (!ga) throw new Error("No active USD global account (run npm run check:airwallex)");
+  const ga = await usdGlobalAccount(awx);
   const bridged = ledger.all().filter((e) => e.kind === "bridge_in").reduce((s, e) => s + (e as any).amount, 0);
   const bridge = new FakeMetalBridge(Math.round((FLOAT_FUNDED - ledger.pnl().aiCosts - bridged) * 100) / 100);
-  const sweep = await sweepFloat(bridge, ledger, policy, (amount, txHash) => awx.simulate.deposit(ga.id, amount, txHash, "Peaje ASA Metal float"));
+  const sweep = await sweepFloat(bridge, ledger, policy, (amount, txHash) => awx.simulate.deposit(ga, amount, txHash, "Peaje ASA Metal float"));
   console.log(`4. Float sweep: ${sweep.swept} USDZ to Airwallex${"txHash" in sweep ? ` (${sweep.txHash}, fake until M5)` : ""}, ${sweep.balance} left on Metal`);
 
   // --- 5. The close

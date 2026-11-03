@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { Airwallex } from "@peaje-asa/airwallex";
 import { Ledger, OrderSigner } from "@peaje-asa/ledger";
-import { FakeInferencePayer } from "@peaje-asa/metal";
+import { metalDir, payerFor } from "@peaje-asa/metal";
 import { defaultPolicy } from "@peaje-asa/policy";
 import { ConversationStore, SellerAgent, type Conversation } from "@peaje-asa/seller-agent";
 
@@ -23,7 +23,7 @@ export function agent(): SellerAgent {
     policy,
     ledger: new Ledger(policy.currency),
     store: new ConversationStore(),
-    payer: new FakeInferencePayer(),
+    payer: payerFor("seller", metalDir(root)),
     providers: {
       cheap: { id: "cheap", url: process.env.PROVIDER_CHEAP_URL ?? "http://localhost:4101" },
       mid: { id: "mid", url: process.env.PROVIDER_MID_URL ?? "http://localhost:4102" },

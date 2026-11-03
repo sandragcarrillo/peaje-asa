@@ -44,3 +44,5 @@ body { background: #d1d7db; color: var(--ink); font: 14.5px/1.4 -apple-system, B
 .composer button:disabled { opacity: 0.5; cursor: default; }
 
 .stats { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 4px 12px; background: #f7f8fa; border-top: 1px solid #e9edef; display: flex; justify-content: space-between; }
+.owner .bubble { background: #fff6d6; border-top-left-radius: 0; }
+.chip.owner { background: #f6e3a1; color: #6b4e00; }

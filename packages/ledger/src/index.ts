@@ -35,12 +35,15 @@ export type DisputeStatus = "open" | "challenged" | "accepted" | "escalated" | "
 export type LedgerEntry =
   | { kind: "sale"; orderId: string; amount: number; cogs: number; currency: Currency; at: string }
   /** Paid from the Metal float, not from the Airwallex wallet. */
-  | { kind: "ai_cost"; conversationId: string; provider: string; amount: number; currency: Currency; at: string }
+  | { kind: "ai_cost"; conversationId: string; provider: string; amount: number; currency: Currency; at: string; txHash?: string }
   | { kind: "supplier_payment"; ref: string; amount: number; currency: Currency; at: string }
   | { kind: "owner_payout"; ref: string; amount: number; currency: Currency; at: string }
   | { kind: "refund"; orderId: string; amount: number; currency: Currency; at: string; ref?: string }
   /** One entry per status change; the latest one per dispute is its current state. */
-  | { kind: "dispute"; disputeId: string; orderId?: string; amount: number; currency: Currency; stage: string; status: DisputeStatus; note?: string; at: string }
+  | { kind: "dispute"; disputeId: string; orderId?: string; amount: number; currency: Currency; stage: string; status: DisputeStatus; note?: string; defense?: string; fileId?: string; at: string }
+  /** Revenue-based advance: cash in now, repaid from future sales. The fee is a cost when taken. */
+  | { kind: "advance"; ref: string; amount: number; fee: number; repaymentShare: number; currency: Currency; at: string }
+  | { kind: "advance_repayment"; ref: string; amount: number; currency: Currency; at: string }
   | { kind: "dispute_fee"; disputeId: string; amount: number; currency: Currency; at: string }
   /** USDZ swept from the Metal float into the Airwallex wallet. */
   | { kind: "bridge_in"; txHash: string; amount: number; currency: Currency; at: string }
@@ -124,8 +127,8 @@ export class Ledger {
   cash() {
     let cash = 0;
     for (const e of this.all()) {
-      if (e.kind === "sale" || e.kind === "bridge_in") cash += e.amount;
-      if (e.kind === "refund" || e.kind === "dispute_fee" || e.kind === "supplier_payment" || e.kind === "owner_payout") cash -= e.amount;
+      if (e.kind === "sale" || e.kind === "bridge_in" || e.kind === "advance") cash += e.amount;
+      if (e.kind === "refund" || e.kind === "dispute_fee" || e.kind === "supplier_payment" || e.kind === "owner_payout" || e.kind === "advance_repayment") cash -= e.amount;
     }
     return round2(cash);
   }
@@ -134,38 +137,34 @@ export class Ledger {
     return (this.db.prepare("SELECT body FROM entries ORDER BY id").all() as { body: string }[]).map((r) => JSON.parse(r.body));
   }
 
-  pnl() {
-    let revenue = 0, cogs = 0, aiCosts = 0, refunds = 0, disputeFees = 0, payouts = 0, supplier = 0;
+  /** Profit and loss, optionally only for entries at or after `since` (ISO time). */
+  pnl(since?: string) {
+    let revenue = 0, cogs = 0, aiCosts = 0, refunds = 0, disputeFees = 0, financing = 0, payouts = 0, supplier = 0;
     for (const e of this.all()) {
+      if (since && e.at < since) continue;
       if (e.kind === "sale") { revenue += e.amount; cogs += e.cogs; }
       if (e.kind === "ai_cost") aiCosts += e.amount;
       if (e.kind === "refund") refunds += e.amount;
       if (e.kind === "dispute_fee") disputeFees += e.amount;
+      if (e.kind === "advance") financing += e.fee;
       if (e.kind === "owner_payout") payouts += e.amount;
       if (e.kind === "supplier_payment") supplier += e.amount;
     }
     const grossProfit = revenue - cogs - refunds;
-    const netProfit = grossProfit - aiCosts - disputeFees;
+    const netProfit = grossProfit - aiCosts - disputeFees - financing;
     return {
       currency: this.currency, revenue: round2(revenue), cogs: round2(cogs), aiCosts: round2(aiCosts), refunds: round2(refunds),
-      disputeFees: round2(disputeFees), grossProfit: round2(grossProfit), netProfit: round2(netProfit),
+      disputeFees: round2(disputeFees), financingCosts: round2(financing), grossProfit: round2(grossProfit), netProfit: round2(netProfit),
       paidToOwner: round2(payouts), paidToSuppliers: round2(supplier),
     };
   }
 
-  /**
-   * Agent-based credit: a simple revenue-based advance offer from what the agent saw.
-   * Deliberately conservative and explainable; tune with real data later.
-   */
-  advanceOffer(days = 30) {
-    const { revenue, netProfit } = this.pnl();
-    // Share of orders that ended up given back (accepted or lost), not share of disputes.
-    const orders = this.orders().length;
-    const lost = this.disputes().filter((d) => d.status === "accepted" || d.status === "lost").length;
-    const disputeRate = orders ? lost / orders : 0;
-    const base = Math.max(0, netProfit) * 0.5;
-    const amount = Math.round(base * (1 - disputeRate));
-    return { amount, repaymentShare: 0.1, basedOnDays: days, revenue, netProfit, disputeRate };
+  /** Advances taken and what's left to repay (principal plus fee). */
+  advances() {
+    const taken = this.all().filter((e) => e.kind === "advance") as Extract<LedgerEntry, { kind: "advance" }>[];
+    const repaid = round2(this.all().filter((e) => e.kind === "advance_repayment").reduce((s, e) => s + (e as { amount: number }).amount, 0));
+    const owed = round2(taken.reduce((s, a) => s + a.amount + a.fee, 0));
+    return { taken, repaid, owed, outstanding: round2(owed - repaid) };
   }
 
   close() { this.db.close(); }

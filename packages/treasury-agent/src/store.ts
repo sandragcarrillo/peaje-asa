@@ -8,7 +8,7 @@ import { canonicalJson, defaultDbPath, openDatabase } from "@peaje-asa/ledger";
 import type { Currency } from "@peaje-asa/policy";
 
 export interface ApprovalTerms {
-  kind: "supplier" | "owner_payout" | "dispute_refund";
+  kind: "supplier" | "advance_repayment" | "owner_payout" | "dispute_refund";
   amount: number;
   currency: Currency;
   /** Beneficiary id for payouts, dispute id for refunds. */
@@ -31,7 +31,7 @@ export interface Approval {
 export interface Payout {
   /** The Airwallex request_id. Saved before the transfer is created, so a crash can't pay twice. */
   requestId: string;
-  kind: "supplier" | "owner_payout";
+  kind: "supplier" | "advance_repayment" | "owner_payout";
   amount: number;
   currency: Currency;
   beneficiaryId: string;

@@ -34,7 +34,27 @@ export interface OwnerPolicy {
   aiFloatTarget: number;
   /** Payouts smaller than this wait for the next close. */
   minPayout: number;
+  /** Advance offer: this share of recent net profit, cut by the dispute rate. */
+  advanceShareOfProfit: number;
+  /** Days of history the advance offer looks at. */
+  advanceWindowDays: number;
+  /** Flat fee on an advance, as a fraction of it. */
+  advanceFee: number;
+  /** Share of each new sale held back to repay an advance. */
+  advanceRepaymentShare: number;
+  /**
+   * Each agent's mandate on the shared Metal account (Kit 11): the most per payment and the budget
+   * it starts with. The owner signs these; the treasury may move budget between the AI agents but
+   * never raises a cap or the total.
+   */
+  agentMandates: Record<MandatedAgent, { cap: number; budget: number }>;
+  /** Model calls each AI agent must be able to pay for at the cheapest current price; below that, budget moves to it. */
+  runwayCalls: Record<AiAgent, number>;
 }
+
+/** The agents that pay from the Metal account. Seller and disputes buy model calls; treasury sweeps the float. */
+export type MandatedAgent = "seller" | "disputes" | "treasury";
+export type AiAgent = "seller" | "disputes";
 
 export const defaultPolicy: OwnerPolicy = {
   currency: "USD",
@@ -49,6 +69,12 @@ export const defaultPolicy: OwnerPolicy = {
   disputeFee: 15,
   aiFloatTarget: 5,
   minPayout: 1,
+  advanceShareOfProfit: 0.5,
+  advanceWindowDays: 30,
+  advanceFee: 0.06,
+  advanceRepaymentShare: 0.1,
+  agentMandates: { seller: { cap: 0.1, budget: 6 }, disputes: { cap: 0.1, budget: 2 }, treasury: { cap: 50, budget: 100 } },
+  runwayCalls: { seller: 100, disputes: 10 },
 };
 
 export type ModelTier = "cheap" | "mid" | "premium";
@@ -168,4 +194,59 @@ export function decideDispute(f: DisputeFacts, policy: OwnerPolicy): DisputeDeci
     return { action: "escalate", why: `The evidence doesn't answer the claim and ${f.amount} ${policy.currency} is above what the agent may give back on its own.` };
   }
   return { action: "accept", reason: "VALID_CUSTOMER_DISPUTE", why: "The evidence doesn't answer the claim." };
+}
+
+/** One AI agent's mandate as the chain reports it. */
+export interface MandateState { agent: AiAgent; budget: number; spent: number }
+
+export type RebalancePlan = {
+  /** New budgets, cuts first, so the sum never exceeds what the owner signed at any point. */
+  changes: { agent: AiAgent; from: number; to: number }[];
+  /** What each agent needs left: runway calls at the cheapest price it can buy. */
+  need: Record<AiAgent, number>;
+  /** Still missing after moving everything spare: only the owner can add budget. */
+  shortfall: number;
+  why: string;
+};
+
+const cents = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Kit 11: when model prices rise, an agent's budget buys fewer calls. Move spare budget from the
+ * agent that has more than its runway to the one that has less, keeping the total the owner signed.
+ * Pure: the treasury agent reads the chain and the offers, this decides, the owner's key replaces.
+ */
+export function planRebalance(states: MandateState[], cheapest: Record<AiAgent, number>, policy: OwnerPolicy): RebalancePlan {
+  const need = Object.fromEntries(states.map((m) => [m.agent, cents(policy.runwayCalls[m.agent] * cheapest[m.agent])])) as Record<AiAgent, number>;
+  const left = (m: MandateState) => cents(m.budget - m.spent);
+  const short = states.filter((m) => left(m) < need[m.agent]);
+  if (!short.length) return { changes: [], need, shortfall: 0, why: "Every agent can pay for its runway at today's prices." };
+
+  let spare = states.filter((m) => left(m) > need[m.agent]).map((m) => ({ m, spare: cents(left(m) - need[m.agent]) }));
+  const cuts = new Map<AiAgent, number>();
+  const adds = new Map<AiAgent, number>();
+  let shortfall = 0;
+  for (const m of short) {
+    let gap = cents(need[m.agent] - left(m));
+    for (const s of spare) {
+      const take = cents(Math.min(gap, s.spare));
+      if (take <= 0) continue;
+      s.spare = cents(s.spare - take);
+      gap = cents(gap - take);
+      cuts.set(s.m.agent, cents((cuts.get(s.m.agent) ?? 0) + take));
+      adds.set(m.agent, cents((adds.get(m.agent) ?? 0) + take));
+    }
+    spare = spare.filter((s) => s.spare > 0);
+    shortfall = cents(shortfall + gap);
+  }
+  const changes = [
+    ...[...cuts].map(([agent, by]) => { const m = states.find((x) => x.agent === agent)!; return { agent, from: m.budget, to: cents(m.budget - by) }; }),
+    ...[...adds].map(([agent, by]) => { const m = states.find((x) => x.agent === agent)!; return { agent, from: m.budget, to: cents(m.budget + by) }; }),
+  ];
+  const moved = changes.filter((c) => c.to > c.from).map((c) => `${cents(c.to - c.from)} to ${c.agent}`).join(", ");
+  const why = [
+    moved && `Moved ${moved} so each agent can pay for its runway at today's prices.`,
+    shortfall > 0 && `Still ${shortfall} short: only the owner can add budget.`,
+  ].filter(Boolean).join(" ");
+  return { changes, need, shortfall, why };
 }

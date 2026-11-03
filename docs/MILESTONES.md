@@ -6,8 +6,8 @@ Submission: working demo, video under 5 min, repo with setup instructions.
 - [x] M1 Money rails (Wed Nov 4 - Thu Nov 5): card payment through the hosted payment link (test card), signed order saved, US/USD beneficiary + transfer simulated to PAID, mock providers paid via the inference payer
 - [x] M2 Seller agent (Fri Nov 6 - Sun Nov 8): chat UI talking to the Claude tool loop, margin-aware model tier choice, discount validation, escalation when AI spend exceeds the deal's budget
 - [x] M3 Treasury (Sun Nov 8 - Mon Nov 9): planClose with reserve and approvals, Metal to Airwallex bridge, supplier payment, owner payout, dispute defense with signed order (Kit 4 flow)
-- [ ] M4 Dashboard + end to end (Tue Nov 10 - Wed Nov 11): P&L, approvals UI, advance offer, scripted demo runner (`scripts/demo.ts`) incl. provider price rise mid-conversation
-- [ ] M5 Real Metal (Thu Nov 12, if time allows): swap FakeInferencePayer for `@metalntwx/metal-pay` clearing on testnet; keep the fake as fallback
+- [x] M4 Dashboard + end to end (Tue Nov 10 - Wed Nov 11): P&L, approvals UI, advance offer, scripted demo runner (`scripts/demo.ts`) incl. provider price rise mid-conversation
+- [ ] M5 Real Metal, Kits 11 and 12 (from Nov 3, moved up: the Metal Award needs it): providers sell over x402 on Metal testnet, three agents pay from one account under their own mandates, the treasury rebalances budgets when prices rise; the fake stays as fallback
 - [ ] M6 Polish + submit (Thu Nov 12 - Fri Nov 13 morning): README setup tested from a clean clone, architecture diagram, demo video script, video, submission
 
 ## Decisions
@@ -55,7 +55,7 @@ Sandbox findings:
 
 ### M3 (done Nov 2)
 - Cash comes from the ledger: sales minus refunds, dispute fees, supplier payments and owner payouts, plus USDZ swept in from Metal. AI is paid from the Metal float, so it isn't Airwallex cash until it's swept back.
-- `planClose` pays suppliers before profit (if inventory can't be paid, the owner waits), sizes the owner's payout to what's left above the reserve, and keeps cash set aside for anything waiting on approval, so approving later can't break the reserve.
+- `planClose` pays suppliers before profit (if inventory can't be paid in full, the owner waits; since M4 inventory is paid in parts with what fits above the reserve, the advance repayment stays all or nothing), sizes the owner's payout to what's left above the reserve, and keeps cash set aside for anything waiting on approval, so approving later can't break the reserve.
 - Approvals (`TreasuryStore`, shared SQLite) are bound to kind, amount, currency, counterparty and reference by a hash, used once with a compare-and-set. A different amount or payee never matches.
 - Payouts save their `request_id` before the transfer is created; an interrupted close is resumed by looking the transfer up, never by creating it again. The ledger books a payout only at PAID.
 - Disputes (Kit 4): `decideDispute` in policy. The fee (15 USD, policy, since the sandbox doesn't deduct it) is avoidable at RFI and sunk at CHARGEBACK, so a case at or under the fee is accepted at RFI, a strong case is defended, and once the fee is sunk any strong case is defended. "Strong" means a signed order that matches the charge plus the customer agreeing in the chat or a signed delivery. A customer who wrote after asking for the owner and got no answer goes to the owner. A dispute on a payment the agent didn't sell is ignored.
@@ -72,3 +72,34 @@ Sandbox findings:
 - A dispute's `merchant_order_id` is the payment link's title, not our order id: match disputes to orders by `payment_intent_id`.
 - A challenge at CHARGEBACK requires `product_type` (`PHYSICAL_GOODS`, ...). The simulator emails the account owner for every dispute event.
 - Simulated deposits take a `reference` field; the old client put it in `payer_name`.
+
+### M4 (done Nov 3)
+- Owner dashboard (`apps/dashboard`, Next.js 16, port 3001) in Peaje's design system, dark version: Overview (cash per the books, net profit, paid to the owner, Metal float, P&L, model spend by tier, Run close / Review disputes / Sweep float), Conversations (approve or decline an escalation, reply as the owner), Approvals, Disputes (decision, why, defense, evidence PDF), Advance (the offer line by line, Accept).
+- Owner login: email and scrypt password hash in `.env` (`npm run keys:owner`), HMAC-signed HttpOnly session cookie (12 h), 5 failed attempts lock a client for 15 min. Every page, server action and route handler checks the session; `proxy.ts` only redirects. The owner's email is what approvals record as `decidedBy`.
+- Approving an escalation creates a quote at exactly the escalated terms and sends its payment link to the customer. Approving a payout runs the close; approving a dispute refund reviews the queue.
+- Advance: 50% of 30-day net profit, times (1 - share of orders given back after a dispute), rounded down to 10; 6% fee; repaid with 10% of each new sale by the close, before the owner's profit. Accepting rechecks the amount the owner saw and refuses if it changed.
+- Owner messages show in the customer chat; the chat refreshes while the owner has it.
+- `scripts/demo.ts`: three scripted customers against the real agent and models, a provider price rise mid-conversation, an escalation for the owner, links paid by hand, shipments and two chargebacks; the rest is done from the dashboard.
+- Inventory is now paid in parts: with 1,002 owed and 740 above the reserve, the all-or-nothing rule paid nothing and the demo showed no money moving. Now the close pays what fits, asks for approval above 300, and the owner's profit waits until inventory is paid in full.
+- Live run on the main book (Nov 3), `npm run demo -- --fresh`:
+  - Espresso: quote on premium (0.05), premium rises to 1.00, the rest of the chat runs on mid, closes at 440. Beans (Spanish): 28 on mid. Café: two machines at 400 each escalated, approved in Conversations, link for 800 sent to the chat. All three paid by hand with the test card.
+  - Chargebacks: fraud on the 440 espresso (signed order, UPS signed delivery) challenged with the PDF; not-received on the 28 beans (unsigned USPS) accepted and refunded.
+  - Sweep: 14.38 USDZ from Metal to Airwallex, 5 kept. AI spend 0.62 over 22 calls (cheap 6, mid 8, premium 8).
+  - Close on 1,254.38: inventory 754.38 held for approval, approved, paid to PAID; profit deferred. Cash ends at the 500 reserve.
+  - Advance: 70 offered (237.38 profit x 50% x 0.67 for 1 of 3 orders given back), accepted, fee 4.20. The next close paid 70 more to inventory without approval (below 300). 177.62 of inventory and 74.20 of the advance still owed; the owner's profit waits.
+- Finding: `--fresh` renames the SQLite file, and a running chat or dashboard keeps the old file open. Restart both after a fresh run (the script says so).
+
+### M5 (in progress Nov 3)
+- Versions pinned per the Airwallex Slack notice: `@metalntwx/metal-pay` 0.3.4, `@metalntwx/metal-agent` 0.3.3.
+- `npm run metal:setup`: owner key and one-owner MetalAccount, faucet USDZ, payee keys (three providers, the bridge), one mandate per agent bound by the owner's key. Seller and disputes may pay only the providers (cap 0.10, budgets 6 and 2); treasury only the bridge (cap 50). Files in `data/metal/`, never in `.env`.
+- Providers: Hono + `@x402/hono` with `registerMetalScheme`; the 402 is a real `exact` offer in USDZ to the provider's address, priced per request (a rise applies to the next offer), settled by Metal's testnet facilitator.
+- `MandatePayer` (Kit 12): reads the price from the 402, refuses above the deal's budget before signing, pays with `createMandatePaymentClient`; a Metal refusal (`MandateRefused`) takes that tier out for the turn and is kept on the conversation. AI cost entries carry the settlement hash.
+- Kit 11: `planRebalance` (policy, tested) moves spare budget to an agent that can't pay its runway (seller 100 calls, disputes 10) at the cheapest live price, cuts first, never raising the total; anything still short is reported for the owner. `rebalanceAgents` reads spend from chain and replaces mandates with the owner's key (spend carries over). Dashboard: Agents page, Rebalance button, history, on-chain refusals.
+- Sweep: `MandateBridge` pulls to the bridge under the treasury's mandate, capped at the float per the books, so the faucet's extra USDZ never becomes cash.
+- Testnet (Nov 3): account 0xe036…E032 funded with 100 USDZ from the faucet; seller, disputes and treasury mandates bound.
+  - A real paid call: 0.01 USDZ to the cheap provider under the seller mandate (tx 0x8e32…3ca6), Haiku answered.
+  - Premium raised to 1.00: refused on chain, `mandate_cap_exceeded`, nothing moved.
+  - Rebalance with all prices up (cheapest 0.06): disputes 2 → 1.99 (tx 0x556d…a727), then seller 6 → 6.01 (tx 0x26bc…85c9). The seller kept paying under the replacement; spend carried over (0.02 over 2 payments).
+  - Dashboard Agents page reads all three mandates from chain.
+- Findings: the console shows both the endpoint URL and an Endpoint Secret (`mrpc_secret_…`); `METAL_RPC_URL` is the URL, with "Require a credential" off (the CLI and x402 clients only take a URL). `account create` uses the faucet for the owner's gas, so funding the account right after gets a 429 for about a minute. Inside Next, `createRequire(import.meta.url)` resolves into the app's folder, so the CLI path is resolved from the working directory.
+- Not yet: the demo running on Metal end to end (chat and dashboard on mandate payers, the sweep under the treasury mandate).

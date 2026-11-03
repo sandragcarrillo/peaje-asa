@@ -20,7 +20,7 @@ export interface Quote {
 }
 
 export interface TranscriptLine {
-  from: "customer" | "agent" | "system";
+  from: "customer" | "agent" | "owner" | "system";
   text: string;
   at: string;
   /** For agent lines: which model tier answered and what that call cost. */
@@ -36,6 +36,8 @@ export interface Escalation {
   terms?: { sku: string; qty: number; unitPrice: number; total: number; currency: Currency; customerRef: string };
   aiSpent: number;
   aiBudget: number;
+  /** The owner's answer. An approval only ever covers `terms` as they were escalated. */
+  resolution?: { decision: "approved" | "declined"; by: string; at: string; quoteId?: string };
 }
 
 export interface Conversation {
@@ -50,6 +52,8 @@ export interface Conversation {
   payment?: { linkId: string; url: string; quoteId: string; orderId: string; paymentIntentId?: string };
   aiSpent: number;
   calls: number;
+  /** Payments Metal refused under the seller's mandate, kept so the owner sees the chain said no. */
+  mandateRefusals?: { tier: string; reason: string; at: string }[];
   /** Facts the system learned between turns (e.g. a verified payment), told to the model on the next turn. */
   pendingNotes: string[];
   escalation?: Escalation;

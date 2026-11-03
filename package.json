@@ -14,11 +14,15 @@
     "typecheck": "tsc -b",
     "dev:providers": "npm run dev -w @peaje-asa/providers",
     "dev:chat": "tsc -b && npm run dev -w @peaje-asa/chat",
+    "dev:dashboard": "tsc -b && npm run dev -w @peaje-asa/dashboard",
+    "demo": "tsc -b && tsx --env-file=.env scripts/demo.ts",
     "check:airwallex": "tsx --env-file=.env scripts/check-airwallex.ts",
     "keys:order": "tsx scripts/gen-order-key.ts",
+    "keys:owner": "tsx scripts/gen-owner-login.ts",
     "m1": "tsx --env-file=.env scripts/m1-rails.ts",
     "m3": "tsc -b && tsx --env-file=.env scripts/m3-treasury.ts",
-    "test": "tsx --test packages/*/src/*.test.ts"
+    "test": "tsx --test packages/*/src/*.test.ts",
+    "metal:setup": "tsc -b && tsx --env-file=.env scripts/metal-setup.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
