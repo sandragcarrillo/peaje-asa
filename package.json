@@ -1,0 +1,20 @@
+{
+  "name": "peaje-asa",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Peaje ASA (Autonomous Seller Agents): seller agents that close sales, run their own books, and pay the business.",
+  "workspaces": ["apps/*", "packages/*", "providers"],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "tsc -b",
+    "dev:providers": "npm run dev -w @peaje-asa/providers",
+    "check:airwallex": "tsx --env-file=.env scripts/check-airwallex.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0"
+  },
+  "engines": { "node": ">=20.6" }
+}

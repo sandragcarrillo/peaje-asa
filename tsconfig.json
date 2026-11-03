@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/policy" },
+    { "path": "packages/ledger" },
+    { "path": "packages/airwallex" },
+    { "path": "packages/metal" },
+    { "path": "packages/seller-agent" },
+    { "path": "packages/treasury-agent" },
+    { "path": "providers" }
+  ]
+}
