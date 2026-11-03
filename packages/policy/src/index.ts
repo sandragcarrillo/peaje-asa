@@ -6,6 +6,8 @@
  * directly against deal margins. A non-USD business currency would need an FX rate here.
  */
 
+export * from "./catalog.js";
+
 export type Currency = "COP" | "USD" | "EUR";
 
 export interface OwnerPolicy {

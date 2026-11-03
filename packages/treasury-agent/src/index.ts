@@ -45,7 +45,7 @@ export function disputeEvidence(ledger: Ledger, orderId: string) {
   return { defendable: true as const, order };
 }
 
-export async function executePayout(awx: Airwallex, o: Obligation, policy: OwnerPolicy, reference: string) {
+export async function executePayout(awx: Airwallex, o: Obligation, policy: OwnerPolicy, reference: string, reason: string) {
   if (!o.beneficiaryId) throw new Error(`Obligation ${o.id} has no beneficiary`);
-  return awx.createTransfer({ beneficiaryId: o.beneficiaryId, amount: o.amount, currency: policy.currency, reference });
+  return awx.createTransferOnce({ beneficiaryId: o.beneficiaryId, amount: o.amount, currency: policy.currency, reference, reason });
 }

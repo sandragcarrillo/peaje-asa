@@ -2,33 +2,50 @@
  * Our own record of everything that happened. Airwallex does not store signed
  * orders or reserves, so this ledger is the source of truth for the dashboard,
  * dispute evidence and the advance offer.
- * In-memory for now; swap for SQLite/Postgres behind the same interface.
+ * In-memory for now; swap for SQLite behind the same interface.
  */
+import type { Currency } from "@peaje-asa/policy";
+
+export * from "./signing.js";
+
+export interface OrderItem { sku: string; qty: number; unitPrice: number }
 
 export interface SignedOrder {
   orderId: string;
   customerRef: string;
-  items: { sku: string; qty: number; unitPrice: number }[];
+  items: OrderItem[];
   total: number;
-  /** Signature or payment proof binding the customer to this exact order. */
-  signature: string;
-  paymentIntentId?: string;
+  currency: Currency;
+  /** Airwallex payment intent that paid this exact order. */
+  paymentIntentId: string;
+  /** Hosted payment link the customer paid through, if any. */
+  paymentLinkId?: string;
   createdAt: string;
+  /** Ed25519 signature (base64) over the canonical JSON of every other field. */
+  signature: string;
+  signerPublicKey: string;
 }
 
 export type LedgerEntry =
-  | { kind: "sale"; orderId: string; amount: number; unitCost: number; at: string }
-  | { kind: "ai_cost"; conversationId: string; provider: string; amount: number; at: string }
-  | { kind: "supplier_payment"; ref: string; amount: number; at: string }
-  | { kind: "owner_payout"; ref: string; amount: number; at: string }
-  | { kind: "refund"; orderId: string; amount: number; at: string }
+  | { kind: "sale"; orderId: string; amount: number; cogs: number; currency: Currency; at: string }
+  | { kind: "ai_cost"; conversationId: string; provider: string; amount: number; currency: Currency; at: string }
+  | { kind: "supplier_payment"; ref: string; amount: number; currency: Currency; at: string }
+  | { kind: "owner_payout"; ref: string; amount: number; currency: Currency; at: string }
+  | { kind: "refund"; orderId: string; amount: number; currency: Currency; at: string }
   | { kind: "dispute"; orderId: string; outcome: "won" | "lost" | "pending"; at: string };
 
 export class Ledger {
   private entries: LedgerEntry[] = [];
   private orders = new Map<string, SignedOrder>();
 
-  add(e: LedgerEntry) { this.entries.push(e); }
+  constructor(readonly currency: Currency = "USD") {}
+
+  add(e: LedgerEntry) {
+    if ("currency" in e && e.currency !== this.currency) {
+      throw new Error(`Ledger is in ${this.currency}; got ${e.kind} in ${e.currency}. Convert before recording.`);
+    }
+    this.entries.push(e);
+  }
   addOrder(o: SignedOrder) { this.orders.set(o.orderId, o); }
   order(id: string) { return this.orders.get(id); }
   all() { return [...this.entries]; }
@@ -36,7 +53,7 @@ export class Ledger {
   pnl() {
     let revenue = 0, cogs = 0, aiCosts = 0, refunds = 0, payouts = 0, supplier = 0;
     for (const e of this.entries) {
-      if (e.kind === "sale") { revenue += e.amount; cogs += e.unitCost; }
+      if (e.kind === "sale") { revenue += e.amount; cogs += e.cogs; }
       if (e.kind === "ai_cost") aiCosts += e.amount;
       if (e.kind === "refund") refunds += e.amount;
       if (e.kind === "owner_payout") payouts += e.amount;
@@ -44,7 +61,7 @@ export class Ledger {
     }
     const grossProfit = revenue - cogs - refunds;
     const netProfit = grossProfit - aiCosts;
-    return { revenue, cogs, aiCosts, refunds, grossProfit, netProfit, paidToOwner: payouts, paidToSuppliers: supplier };
+    return { currency: this.currency, revenue, cogs, aiCosts, refunds, grossProfit, netProfit, paidToOwner: payouts, paidToSuppliers: supplier };
   }
 
   /**
