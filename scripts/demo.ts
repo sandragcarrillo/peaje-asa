@@ -10,7 +10,8 @@
  *    One buys beans. One wants two machines below what the agent may offer: it asks the owner.
  * 2. You: approve the café's price in the dashboard (Conversations), then pay the links with the test card.
  * 3. Paid orders ship. Two chargebacks are staged: a small one and a fraud claim on the negotiated sale.
- * 4. You, in the dashboard: Review disputes, Run close, approve what's above the threshold, Sweep float, Advance.
+ * 4. On Metal, every provider raises its price (supplier costs rise) and stays there: the seller's budget buys fewer calls.
+ * 5. You, in the dashboard: Agents > Rebalance, Review disputes, Run close, approve what's above the threshold, Sweep float, Advance.
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, renameSync } from "node:fs";
@@ -52,6 +53,8 @@ const tiers: Record<ModelTier, { id: string; url: string }> = {
   premium: { id: "premium", url: process.env.PROVIDER_PREMIUM_URL ?? "http://localhost:4103" },
 };
 const BASE_PRICE: Record<ModelTier, number> = { cheap: 0.01, mid: 0.02, premium: 0.05 };
+/** After the chats: the cheapest call costs 6x, so the seller's 100-call runway needs 6 USDZ left. */
+const MARKET_RISE: Record<ModelTier, number> = { cheap: 0.06, mid: 0.07, premium: 0.09 };
 const setPrice = (t: ModelTier, price: number) =>
   fetch(`${tiers[t].url}/price`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ price }) });
 
@@ -173,7 +176,13 @@ try {
     }
   }
 
-  console.log(`\n4. In ${DASHBOARD}: Review disputes, Run close (approve what's above ${policy.approvalThreshold} USD), Sweep float, then Advance.`);
+  // --- 4. Supplier costs rise (Kit 11). Left in place so Agents > Rebalance sees them; restart the providers to reset.
+  if (metalReady(METAL)) {
+    for (const [t, p] of Object.entries(MARKET_RISE)) await setPrice(t as ModelTier, p);
+    console.log(`\n4. Every provider raised its price: ${Object.entries(MARKET_RISE).map(([t, p]) => `${t} ${p}`).join(", ")} USDZ per call. The seller's budget now buys fewer calls.`);
+  }
+
+  console.log(`\n5. In ${DASHBOARD}: ${metalReady(METAL) ? "Agents > Rebalance, then " : ""}Review disputes, Run close (approve what's above ${policy.approvalThreshold} USD), Sweep float, then Advance.`);
   console.log(`   Cash ${ledger.cash()} USD.`, ledger.pnl());
 } finally {
   providers?.kill();

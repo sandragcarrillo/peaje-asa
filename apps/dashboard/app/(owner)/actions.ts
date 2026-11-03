@@ -9,7 +9,7 @@ import { acceptAdvance, ensurePayees, rebalanceAgents, reviewDisputes, runClose,
 import type { ActionResult } from "@/components/action-form";
 import { requireOwner } from "@/lib/auth";
 import { closeDeps, deps, METAL, metalBridge } from "@/lib/deps";
-import { payerFor } from "@peaje-asa/metal";
+import { metalReady, payerFor } from "@peaje-asa/metal";
 import { errorText, usd } from "@/lib/format";
 
 const LABEL = { supplier: "Inventory", advance_repayment: "Advance repayment", owner_payout: "Profit to owner" } as const;
@@ -70,7 +70,7 @@ export async function sweepFloatAction(): Promise<ActionResult> {
     const ga = await usdGlobalAccount(awx);
     const r = await sweepFloat(metalBridge(), ledger, policy, (amount, txHash) => awx.simulate.deposit(ga, amount, txHash, "Peaje ASA Metal float"));
     if (!r.swept) return { ok: true, message: `Nothing to sweep: ${r.balance} USDZ on Metal, the agents keep ${policy.aiFloatTarget} for model calls.` };
-    return { ok: true, message: `Swept ${r.swept} USDZ from Metal to Airwallex. ${r.balance} USDZ stays for model calls.`, lines: [`Bridge tx ${r.txHash} (fake bridge until M5)`] };
+    return { ok: true, message: `Swept ${r.swept} USDZ from Metal to Airwallex. ${r.balance} USDZ stays for model calls.`, lines: [metalReady(METAL) ? `Pulled on Metal testnet under the treasury mandate: ${r.txHash}. Airwallex can't receive USDZ, so the deposit on its side is simulated with this hash.` : `Bridge tx ${r.txHash} (fake bridge: Metal isn't set up)`] };
   });
 }
 

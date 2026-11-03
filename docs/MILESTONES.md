@@ -7,8 +7,9 @@ Submission: working demo, video under 5 min, repo with setup instructions.
 - [x] M2 Seller agent (Fri Nov 6 - Sun Nov 8): chat UI talking to the Claude tool loop, margin-aware model tier choice, discount validation, escalation when AI spend exceeds the deal's budget
 - [x] M3 Treasury (Sun Nov 8 - Mon Nov 9): planClose with reserve and approvals, Metal to Airwallex bridge, supplier payment, owner payout, dispute defense with signed order (Kit 4 flow)
 - [x] M4 Dashboard + end to end (Tue Nov 10 - Wed Nov 11): P&L, approvals UI, advance offer, scripted demo runner (`scripts/demo.ts`) incl. provider price rise mid-conversation
-- [ ] M5 Real Metal, Kits 11 and 12 (from Nov 3, moved up: the Metal Award needs it): providers sell over x402 on Metal testnet, three agents pay from one account under their own mandates, the treasury rebalances budgets when prices rise; the fake stays as fallback
-- [ ] M6 Polish + submit (Thu Nov 12 - Fri Nov 13 morning): README setup tested from a clean clone, architecture diagram, demo video script, video, submission
+- [x] M5 Real Metal, Kits 11 and 12 (from Nov 3, moved up: the Metal Award needs it): providers sell over x402 on Metal testnet, three agents pay from one account under their own mandates, the treasury rebalances budgets when prices rise; the fake stays as fallback
+- [ ] M6 Shops for anyone + agent checkout (Kit 10): public deploy (Railway), signup with own catalog and Airwallex keys, Metal account per shop, embeddable chat widget (`<script data-shop>`, iframe, frame-ancestors per shop), Airwallex Agentic Commerce storefront per shop (MCP/ACP), buyer agents verified by their Metal mandate
+- [ ] M7 Polish + submit (Thu Nov 12 - Fri Nov 13 morning): README setup tested from a clean clone, architecture diagram, demo video script, video, submission
 
 ## Decisions
 
@@ -89,7 +90,7 @@ Sandbox findings:
   - Advance: 70 offered (237.38 profit x 50% x 0.67 for 1 of 3 orders given back), accepted, fee 4.20. The next close paid 70 more to inventory without approval (below 300). 177.62 of inventory and 74.20 of the advance still owed; the owner's profit waits.
 - Finding: `--fresh` renames the SQLite file, and a running chat or dashboard keeps the old file open. Restart both after a fresh run (the script says so).
 
-### M5 (in progress Nov 3)
+### M5 (done Nov 3)
 - Versions pinned per the Airwallex Slack notice: `@metalntwx/metal-pay` 0.3.4, `@metalntwx/metal-agent` 0.3.3.
 - `npm run metal:setup`: owner key and one-owner MetalAccount, faucet USDZ, payee keys (three providers, the bridge), one mandate per agent bound by the owner's key. Seller and disputes may pay only the providers (cap 0.10, budgets 6 and 2); treasury only the bridge (cap 50). Files in `data/metal/`, never in `.env`.
 - Providers: Hono + `@x402/hono` with `registerMetalScheme`; the 402 is a real `exact` offer in USDZ to the provider's address, priced per request (a rise applies to the next offer), settled by Metal's testnet facilitator.
@@ -102,4 +103,11 @@ Sandbox findings:
   - Rebalance with all prices up (cheapest 0.06): disputes 2 → 1.99 (tx 0x556d…a727), then seller 6 → 6.01 (tx 0x26bc…85c9). The seller kept paying under the replacement; spend carried over (0.02 over 2 payments).
   - Dashboard Agents page reads all three mandates from chain.
 - Findings: the console shows both the endpoint URL and an Endpoint Secret (`mrpc_secret_…`); `METAL_RPC_URL` is the URL, with "Require a credential" off (the CLI and x402 clients only take a URL). `account create` uses the faucet for the owner's gas, so funding the account right after gets a 429 for about a minute. Inside Next, `createRequire(import.meta.url)` resolves into the app's folder, so the CLI path is resolved from the working directory.
-- Not yet: the demo running on Metal end to end (chat and dashboard on mandate payers, the sweep under the treasury mandate).
+- Full demo on Metal (Nov 3, `npm run demo -- --fresh`): every model call in chat and dashboard paid under a mandate on testnet.
+  - Three chats sold 440 + 28 + 800 (café approved by the owner at 400 each), paid with the test card, signed, shipped. Chargebacks on the espresso (fraud) and the beans (not received).
+  - Providers raised prices (cheap 0.06, mid 0.07, premium 0.09). Seller had 81 calls left, under its 100. Rebalance moved 1.11: disputes 1.99 → 0.88 (tx 0xe7a4…79a3), seller 6.01 → 7.12 (tx 0xd036…625e). Seller back to 100 calls.
+  - Review disputes: espresso challenged with the signed order (the disputes agent paid 0.09 under its mandate at the new price), beans accepted (cheaper than the fee).
+  - Close on 1,240: inventory 740 held, approved, paid; profit deferred; cash at the 500 reserve.
+  - Sweep: 14.39 USDZ pulled to the bridge under the treasury mandate (tx 0x8f12…c4ec), credited to Airwallex as a simulated deposit; 5 stay for model calls.
+  - Advance: 70 accepted, fee 4.20, 74.20 owed.
+  - Finding: piping the demo through `sed` buffers its output; use `sed -l` (macOS) to read the payment links as they print.
