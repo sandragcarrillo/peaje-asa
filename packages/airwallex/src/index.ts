@@ -37,6 +37,8 @@ export interface TransferInput {
 export const TRANSFER_TERMINAL = ["PAID", "CANCELLED"] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Airwallex wants `2026-11-13T04:09:48+0000`. */
+const isoIn = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().replace(/\.\d+Z$/, "+0000");
 
 export class Airwallex {
   private token?: string;
@@ -124,6 +126,39 @@ export class Airwallex {
   }
   getPaymentLink(id: string) { return this.call("GET", `/pa/payment_links/${id}`); }
 
+  // --- Disputes (Kit 4). REST only: the challenge tool lacks required fields.
+  // A dispute carries the payment intent; merchant_order_id is the link's title, not our order id.
+  listDisputes(status?: string) {
+    return this.call("GET", `/pa/payment_disputes${status ? `?status=${status}` : ""}`);
+  }
+  getDispute(id: string) { return this.call("GET", `/pa/payment_disputes/${id}`); }
+  /** Accepting at RFI refunds the customer in full. Read the dispute before retrying. */
+  acceptDispute(id: string, input: { reason: string; description: string; requestId?: string }) {
+    return this.call("POST", `/pa/payment_disputes/${id}/accept`, {
+      request_id: input.requestId ?? Airwallex.requestId(), reason: input.reason, description: input.description, accepted_by: "peaje-asa-treasury",
+    });
+  }
+  /** `body` carries the evidence fields (order_info, customer_info, delivery_info, supporting_documents...). */
+  challengeDispute(id: string, body: Record<string, unknown>, requestId = Airwallex.requestId()) {
+    return this.call("POST", `/pa/payment_disputes/${id}/challenge`, { request_id: requestId, challenged_by: "peaje-asa-treasury", ...body });
+  }
+  listRefunds(paymentIntentId: string) {
+    return this.call("GET", `/pa/refunds?payment_intent_id=${encodeURIComponent(paymentIntentId)}`);
+  }
+
+  /** Evidence goes to the files host. JPG or PDF only: PNG is rejected. */
+  async uploadFile(filename: string, bytes: Uint8Array, contentType: "application/pdf" | "image/jpeg", notes?: string) {
+    const token = await this.login();
+    const form = new FormData();
+    form.append("file", new Blob([new Uint8Array(bytes)], { type: contentType }), filename);
+    if (notes) form.append("notes", notes.slice(0, 50));
+    const url = `${this.base.replace("//api.", "//files.")}/api/v1/files/upload`;
+    const res = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
+    const text = await res.text();
+    if (!res.ok) throw new AirwallexError(res.status, "/files/upload", text);
+    return JSON.parse(text) as { file_id: string; filename: string; size: number };
+  }
+
   // --- FX (REST only, no MCP tool). Leave x-api-version off.
   convert(sell: string, buy: string, buyAmount: number) {
     return this.call("POST", "/fx/conversions/create", {
@@ -146,6 +181,20 @@ export class Airwallex {
     return this.call("POST", "/beneficiaries/create", { beneficiary, nickname, transfer_methods: ["LOCAL"] });
   }
   listBeneficiaries() { return this.call("GET", "/beneficiaries"); }
+
+  /**
+   * Validate, then reuse an existing beneficiary with the same bank account or create it.
+   * The list doesn't return nicknames, so bank details are the match key.
+   */
+  async ensureBeneficiary(beneficiary: { bank_details: { account_number: string; account_routing_value1: string } }, nickname: string): Promise<string> {
+    await this.validateBeneficiary(beneficiary);
+    const bank = beneficiary.bank_details;
+    const list: any = await this.listBeneficiaries();
+    const found = list.items?.find((b: any) =>
+      b.beneficiary?.bank_details?.account_number === bank.account_number &&
+      b.beneficiary?.bank_details?.account_routing_value1 === bank.account_routing_value1);
+    return found?.id ?? ((await this.createBeneficiary(beneficiary, nickname)) as any).id;
+  }
 
   getTransfer(id: string) { return this.call("GET", `/transfers/${id}`); }
   async findTransferByRequestId(requestId: string) {
@@ -203,8 +252,22 @@ export class Airwallex {
 
   // --- Sandbox-only simulations. Keep everything sandbox-specific here.
   simulate = {
-    deposit: (globalAccountId: string, amount: number, reference?: string) =>
-      this.call("POST", "/simulation/deposit/create", { global_account_id: globalAccountId, amount, payer_name: reference ?? "Peaje ASA" }),
+    deposit: (globalAccountId: string, amount: number, reference?: string, payerName = "Peaje ASA") =>
+      this.call("POST", "/simulation/deposit/create", { global_account_id: globalAccountId, amount, reference, payer_name: payerName }),
+    /**
+     * Stage a chargeback on a paid intent (link-paid intents work). Use RFI or CHARGEBACK:
+     * PRE_CHARGEBACK auto-accepts in the same second. Visa codes: 10.4 fraud, 13.1 not received, 13.6 credit not processed.
+     */
+    createDispute: (paymentIntentId: string, stage: "RFI" | "CHARGEBACK", reasonCode: "10.4" | "13.1" | "13.6", dueInDays = 10) =>
+      this.call("POST", "/simulation/pa/payment_disputes/create", {
+        payment_intent_id: paymentIntentId, stage, reason_code: reasonCode, due_at: isoIn(dueInDays),
+      }),
+    /** The issuer rejects a challenged RFI: it moves to CHARGEBACK and needs a response again. Fails from CHARGEBACK. */
+    escalateDispute: (disputeId: string, dueInDays = 10) =>
+      this.call("POST", `/simulation/pa/payment_disputes/${disputeId}/escalate`, { due_at: isoIn(dueInDays) }),
+    /** End a challenged case. "MERCHANT" means we won. */
+    resolveDispute: (disputeId: string, inFavorOf: "MERCHANT" | string) =>
+      this.call("POST", `/simulation/pa/payment_disputes/${disputeId}/resolve`, { in_favor_of: inFavorOf }),
     /** Move a transfer forward. A failure_type only applies once the transfer has reached SENT. */
     transferTo: (transferId: string, nextStatus: "SENT" | "PAID" | "FAILED", failureType?: string) =>
       this.call("POST", `/simulation/transfers/${transferId}/transition`, { next_status: nextStatus, failure_type: failureType }),

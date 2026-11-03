@@ -17,6 +17,7 @@
     "check:airwallex": "tsx --env-file=.env scripts/check-airwallex.ts",
     "keys:order": "tsx scripts/gen-order-key.ts",
     "m1": "tsx --env-file=.env scripts/m1-rails.ts",
+    "m3": "tsc -b && tsx --env-file=.env scripts/m3-treasury.ts",
     "test": "tsx --test packages/*/src/*.test.ts"
   },
   "devDependencies": {

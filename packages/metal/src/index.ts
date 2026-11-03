@@ -11,6 +11,8 @@
  *   then simulate an Airwallex deposit with the hash as reference.
  */
 
+import { randomBytes } from "node:crypto";
+
 export interface InferenceProvider {
   id: string;
   url: string;
@@ -44,6 +46,27 @@ export interface InferencePayer {
   quote(provider: InferenceProvider): Promise<Offer>;
   /** Pay and call. Must be idempotent per job: resend the same request before rerouting. */
   payAndCall<T>(provider: InferenceProvider, payload: unknown, maxPrice: number): Promise<PaidCall<T>>;
+}
+
+/**
+ * The Metal side of the treasury: the USDZ float the agents pay models from, and moving
+ * what isn't needed to our Metal address. Airwallex can't receive stablecoins, so the
+ * Airwallex side of the move is a simulated deposit referencing the transaction hash.
+ */
+export interface MetalBridge {
+  floatBalance(): Promise<number>;
+  sweep(amount: number): Promise<{ txHash: string }>;
+}
+
+/** Stand-in until M5: keeps a float balance in memory and returns a made-up hash marked as fake. */
+export class FakeMetalBridge implements MetalBridge {
+  constructor(private balance: number) {}
+  async floatBalance() { return this.balance; }
+  async sweep(amount: number) {
+    if (amount > this.balance + 1e-9) throw new Error(`float has ${this.balance}, can't sweep ${amount}`);
+    this.balance = Math.round((this.balance - amount) * 100) / 100;
+    return { txHash: `0xfake${randomBytes(30).toString("hex")}` };
+  }
 }
 
 /** Placeholder so the rest of the system can run end to end before Metal is wired. */

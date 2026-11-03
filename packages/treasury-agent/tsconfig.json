@@ -1,1 +1,1 @@
-{ "extends": "../../tsconfig.base.json", "compilerOptions": { "rootDir": "src", "outDir": "dist" }, "include": ["src"], "exclude": ["src/**/*.test.ts"], "references": [{ "path": "../policy" }, { "path": "../ledger" }, { "path": "../airwallex" }] }
+{ "extends": "../../tsconfig.base.json", "compilerOptions": { "rootDir": "src", "outDir": "dist" }, "include": ["src"], "exclude": ["src/**/*.test.ts"], "references": [{ "path": "../policy" }, { "path": "../ledger" }, { "path": "../airwallex" }, { "path": "../metal" }] }

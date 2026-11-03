@@ -100,6 +100,16 @@ export class SellerAgent {
     });
   }
 
+  /** Owner side: send the payment link for a quote (e.g. after approving a price). Same one-link-per-quote rule as the tool. */
+  sendPaymentLink(convId: string, quoteId: string): Promise<{ url: string }> {
+    return this.serial(convId, async () => {
+      const c = this.deps.store.get(convId);
+      const q = c?.quotes.find((x) => x.id === quoteId);
+      if (!c || !q) throw new Error(`No quote ${quoteId} in ${convId}`);
+      return this.toolContext().createPaymentLink(c, q);
+    });
+  }
+
   private async serial<T>(convId: string, fn: () => Promise<T>): Promise<T> {
     const prev = this.locks.get(convId) ?? Promise.resolve();
     const run = prev.then(fn, fn);

@@ -28,6 +28,12 @@ export interface OwnerPolicy {
   expectedCallsPerConversation: number;
   /** Providers advertising a slower answer than this are skipped. */
   maxProviderLatencyMs: number;
+  /** What a chargeback costs the business even when it wins. The sandbox doesn't deduct it, so it lives here. */
+  disputeFee: number;
+  /** USDZ to keep in the Metal float for upcoming model calls; the treasury sweeps the rest to Airwallex. */
+  aiFloatTarget: number;
+  /** Payouts smaller than this wait for the next close. */
+  minPayout: number;
 }
 
 export const defaultPolicy: OwnerPolicy = {
@@ -40,6 +46,9 @@ export const defaultPolicy: OwnerPolicy = {
   discoveryBudget: 0.1,
   expectedCallsPerConversation: 10,
   maxProviderLatencyMs: 4000,
+  disputeFee: 15,
+  aiFloatTarget: 5,
+  minPayout: 1,
 };
 
 export type ModelTier = "cheap" | "mid" | "premium";
@@ -111,4 +120,52 @@ export function checkOffer(
 /** Does a treasury payment need the owner? */
 export function needsApproval(amount: number, policy: OwnerPolicy): boolean {
   return amount > policy.approvalThreshold;
+}
+
+/** What the treasury knows about a disputed charge, gathered from the ledger and the chat. */
+export interface DisputeFacts {
+  amount: number;
+  /** Airwallex stage: RFI, PRE_CHARGEBACK, CHARGEBACK, PRE_ARBITRATION. */
+  stage: string;
+  /** Airwallex reason type, e.g. FRAUDULENT, PRODUCT_NOT_RECEIVED, CREDIT_NOT_PROCESSED. */
+  reason: string;
+  /** A signed order exists for this payment and its terms match the charge. */
+  signedOrderMatches: boolean;
+  /** The customer agreed to this purchase in their own words in the chat. */
+  customerAgreedInChat: boolean;
+  /** Carrier proof of delivery, and whether the customer signed for it. */
+  delivery: "signed" | "unsigned" | "none";
+  /** Messages the customer sent after asking for the owner that nobody answered. */
+  unansweredContacts: number;
+}
+
+export type DisputeDecision =
+  | { action: "challenge"; why: string }
+  | { action: "accept"; reason: "LOW_VALUE_TRANSACTION" | "VALID_CUSTOMER_DISPUTE"; why: string }
+  | { action: "escalate"; why: string };
+
+/**
+ * Challenge, accept or hand to the owner. The fee is charged once a case reaches chargeback,
+ * win or lose, so at RFI defending only pays if the amount beats the fee; once it's sunk,
+ * any case with strong evidence is worth defending.
+ */
+export function decideDispute(f: DisputeFacts, policy: OwnerPolicy): DisputeDecision {
+  if (f.unansweredContacts > 0) {
+    return { action: "escalate", why: `The customer wrote ${f.unansweredContacts} time(s) after asking for the owner and nobody answered. The owner should make this right.` };
+  }
+  const strong = f.signedOrderMatches && (
+    f.reason === "FRAUDULENT" ? f.customerAgreedInChat || f.delivery === "signed"
+    : f.reason === "PRODUCT_NOT_RECEIVED" ? f.delivery === "signed"
+    : false);
+  const feeAhead = f.stage === "RFI" ? policy.disputeFee : 0;
+  if (strong && f.amount > feeAhead) {
+    return { action: "challenge", why: "The signed order and the customer's own messages answer the claim." };
+  }
+  if (f.amount <= policy.disputeFee) {
+    return { action: "accept", reason: "LOW_VALUE_TRANSACTION", why: `Defending costs ${policy.disputeFee} ${policy.currency}, more than the ${f.amount} at risk.` };
+  }
+  if (f.amount > policy.approvalThreshold) {
+    return { action: "escalate", why: `The evidence doesn't answer the claim and ${f.amount} ${policy.currency} is above what the agent may give back on its own.` };
+  }
+  return { action: "accept", reason: "VALID_CUSTOMER_DISPUTE", why: "The evidence doesn't answer the claim." };
 }
