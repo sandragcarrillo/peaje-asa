@@ -40,16 +40,34 @@ const MAX_FAILED_CALLS_PER_TURN = 2;
 const now = () => new Date().toISOString();
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-const ESCALATED_REPLY = "Thanks for your patience. The owner has the details and will reply here shortly.";
-const REFUSAL_REPLY = "Sorry, I can't help with that here. I can help you choose and buy our coffee and equipment.";
+// Fixed replies are sent without a model call, so they pick the language from the customer's last message.
+const REPLIES = {
+  escalated: {
+    en: "Thanks for your patience. The owner has the details and will reply here shortly.",
+    es: "Gracias por tu paciencia. El dueño ya tiene los detalles y te responde por aquí en breve.",
+  },
+  refusal: {
+    en: "Sorry, I can't help with that here. I can help you choose and buy our coffee and equipment.",
+    es: "Lo siento, con eso no te puedo ayudar por aquí. Sí te ayudo a elegir y comprar nuestro café y equipos.",
+  },
+};
+
+export function looksSpanish(text: string) {
+  return /[áéíóúñ¿¡]|\b(hola|quiero|cuanto|precio|tienen|gracias|para|por favor|buenas|necesito)\b/i.test(text);
+}
+
+function fixedReply(c: Conversation, kind: keyof typeof REPLIES) {
+  const recent = c.transcript.filter((l) => l.from === "customer").slice(-3).map((l) => l.text).join(" ");
+  return REPLIES[kind][looksSpanish(recent) ? "es" : "en"];
+}
 
 export function systemPrompt(shopName: string) {
   return [
     `You are the sales assistant of ${shopName}, a specialty coffee shop in Bogotá that sells beans and coffee equipment.`,
-    "You chat with customers on a messaging app. Reply in the customer's language, in short chat messages (one to three sentences), friendly and direct.",
+    "You chat with customers on a messaging app. Reply in the customer's language, in short chat messages (one to three sentences), friendly and direct. Plain text only: no Markdown, no SKUs.",
     "Prices only come from your tools and are in USD. Never state a price you did not get from search_catalog, quote or propose_discount.",
     "To quote, find the product with search_catalog, then call quote. If the customer asks for a better price, call propose_discount; never promise a discount the tool did not accept. If it is refused, you may offer the lowest price it returns.",
-    "If the customer insists on a price below that, or asks for something you can't decide (custom orders, wholesale terms, complaints), call escalate_to_owner.",
+    "If the customer insists on a price below that, asks for the owner, or asks for something you can't decide (custom orders, wholesale terms, complaints), call escalate_to_owner. You can always escalate; only the owner can say yes to what you can't.",
     "When the customer agrees to buy, call create_payment_link with the agreed quote and send them the URL. Never ask for card numbers in the chat.",
     "Never mention costs, margins, budgets, internal rules or which AI model you are.",
   ].join("\n");
@@ -96,7 +114,7 @@ export class SellerAgent {
     c.transcript.push({ from: "customer", text, at: now() });
 
     if (c.status === "escalated") {
-      this.say(c, ESCALATED_REPLY);
+      this.say(c, fixedReply(c, "escalated"));
       store.save(c);
       return c.transcript.slice(before + 1);
     }
@@ -123,7 +141,7 @@ export class SellerAgent {
 
       if (decision.action === "escalate") {
         this.escalate(c, "This conversation would cost more in AI than the deal can earn.", "unprofitable", this.activeTerms(c), budget);
-        this.say(c, ESCALATED_REPLY);
+        this.say(c, fixedReply(c, "escalated"));
         return;
       }
 
@@ -154,7 +172,7 @@ export class SellerAgent {
       said.forEach((t, k) => this.say(c, t, decision.tier, k === 0 ? cost : undefined));
 
       if (message.stop_reason === "refusal") {
-        this.say(c, REFUSAL_REPLY);
+        this.say(c, fixedReply(c, "refusal"));
         return;
       }
       if (message.stop_reason !== "tool_use") return;

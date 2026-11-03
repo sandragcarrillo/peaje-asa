@@ -121,7 +121,6 @@ export async function runTool(name: string, input: any, c: Conversation, ctx: To
         accepted: false,
         reason: verdict.reason === "below_margin_floor" ? "below what the owner allows" : "bigger than the discount you may give without the owner",
         lowest_unit_price_you_may_offer: lowestAutoPrice(p.listPrice, p.unitCost, policy),
-        can_ask_owner: verdict.reason === "needs_owner_approval",
       });
     }
     case "create_payment_link": {

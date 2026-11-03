@@ -44,4 +44,11 @@ Sandbox findings:
 - `checkPayment` reads the link, verifies the intent with Airwallex (status, amount, currency), signs the order and books the sale with COGS. The model learns about the payment on the next turn through a system note.
 - `apps/chat`: Next.js 16 WhatsApp-style chat. URL keeps the conversation id (`?c=`); polls Airwallex every 3 s while a link is out. Agent bubbles show tier and call cost.
 - Tests with a scripted payer and fake Airwallex: discount rules, discovery on cheap then mid for 2x Huila, link amount from the quote, signed order on payment, premium for the 480 machine, price rise reroutes to mid then escalates.
-- Smoke test in the browser: chat, API, offers from the three providers, tier choice and paid call all wired; stops at the provider because `ANTHROPIC_API_KEY` is empty. Pending: a real run with the key (small sale, big sale with discount, price rise, escalation).
+- Real run with Claude (Nov 2), sandbox payment links:
+  - 2x Huila in Spanish: cheap for search and quote, mid once the 16 USD margin is known, link for 28 USD. 5 calls, 0.08 USD of AI.
+  - Home espresso machine: asked 400, refused by policy, agent offers 440 (the floor) on premium.
+  - Premium raises to 0.50 and slows to 6 s mid-conversation: the next reply comes from mid, and the 440 link goes out on mid.
+  - All providers at 0.50: the grinder conversation escalates as unprofitable before any model call, with a fixed reply in the customer's language.
+  - 30 machines at 300 and the customer asks for the owner: escalated with the terms bound (30 x 300 = 9,000 USD).
+- Fixes from the run: fixed replies follow the customer's language; the agent may always escalate (it used to refuse below the floor even when asked for the owner); plain text, no Markdown or SKUs.
+- Pending: pay one link by hand to see `checkPayment` sign and book the order live (covered by tests with a fake Airwallex).
