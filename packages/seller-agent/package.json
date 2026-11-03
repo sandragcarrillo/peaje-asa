@@ -5,6 +5,14 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "scripts": { "build": "tsc -b" },
-  "dependencies": { "@peaje-asa/policy": "*", "@peaje-asa/ledger": "*", "@peaje-asa/metal": "*" }
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.4.0",
+    "@peaje-asa/airwallex": "*",
+    "@peaje-asa/ledger": "*",
+    "@peaje-asa/metal": "*",
+    "@peaje-asa/policy": "*"
+  }
 }

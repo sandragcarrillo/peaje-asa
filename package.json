@@ -4,19 +4,27 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Peaje ASA (Autonomous Seller Agents): seller agents that close sales, run their own books, and pay the business.",
-  "workspaces": ["apps/*", "packages/*", "providers"],
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "providers"
+  ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "typecheck": "tsc -b",
     "dev:providers": "npm run dev -w @peaje-asa/providers",
+    "dev:chat": "tsc -b && npm run dev -w @peaje-asa/chat",
     "check:airwallex": "tsx --env-file=.env scripts/check-airwallex.ts",
     "keys:order": "tsx scripts/gen-order-key.ts",
-    "m1": "tsx --env-file=.env scripts/m1-rails.ts"
+    "m1": "tsx --env-file=.env scripts/m1-rails.ts",
+    "test": "tsx --test packages/*/src/*.test.ts"
   },
   "devDependencies": {
-    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
-    "@types/node": "^22.0.0"
+    "typescript": "^5.6.0"
   },
-  "engines": { "node": ">=20.6" }
+  "engines": {
+    "node": ">=22.13"
+  }
 }

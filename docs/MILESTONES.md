@@ -37,3 +37,11 @@ Sandbox findings:
 - New transfers start at SCHEDULED and a simulation transition from there returns 500. `simulate.settleTransfer` waits for PROCESSING, then moves SENT -> PAID (or FAILED with a failure_type).
 - The sandbox accepts any transfer `reason` string; production validates it.
 - Payment links take no `request_id`: store the link id per order and never create a second one.
+
+### M2 (in progress)
+- `SellerAgent` (`packages/seller-agent`): manual tool loop over paid providers. Before every model call it reads all three providers' offers and `chooseTier` picks the best tier the deal can afford; a price that moves between the quote and the payment is re-planned, a paid call that fails is still booked as cost. When nothing fits, the conversation escalates with the active quote's terms bound.
+- Tools: `search_catalog` (never returns cost), `quote`, `propose_discount` (refusals return the lowest price the agent may offer), `create_payment_link` (one link per quote, amount from the quote), `escalate_to_owner`.
+- `checkPayment` reads the link, verifies the intent with Airwallex (status, amount, currency), signs the order and books the sale with COGS. The model learns about the payment on the next turn through a system note.
+- `apps/chat`: Next.js 16 WhatsApp-style chat. URL keeps the conversation id (`?c=`); polls Airwallex every 3 s while a link is out. Agent bubbles show tier and call cost.
+- Tests with a scripted payer and fake Airwallex: discount rules, discovery on cheap then mid for 2x Huila, link amount from the quote, signed order on payment, premium for the 480 machine, price rise reroutes to mid then escalates.
+- Smoke test in the browser: chat, API, offers from the three providers, tier choice and paid call all wired; stops at the provider because `ANTHROPIC_API_KEY` is empty. Pending: a real run with the key (small sale, big sale with discount, price rise, escalation).

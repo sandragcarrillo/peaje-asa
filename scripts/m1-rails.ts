@@ -16,7 +16,7 @@ import { defaultPolicy, findProduct } from "../packages/policy/src/index.js";
 
 const policy = defaultPolicy;
 const awx = Airwallex.fromEnv();
-const ledger = new Ledger(policy.currency);
+const ledger = new Ledger(policy.currency, ":memory:"); // throwaway book for the rails check
 const signer = OrderSigner.fromEnv();
 const now = () => new Date().toISOString();
 const round2 = (n: number) => Math.round(n * 100) / 100;

@@ -13,3 +13,6 @@
 - Customers pay on the hosted payment link. The sandbox account has no native API access, so raw-card confirms fail.
 - Settle simulated transfers with `simulate.settleTransfer` (a transition from SCHEDULED returns 500).
 - Never commit `.env`.
+- Seller agent loop is manual (not the SDK tool runner) so each model call goes through a paid provider chosen by `chooseTier`. Append assistant content to `llmMessages` exactly as returned; never edit earlier turns.
+- Amounts never come from the model: `create_payment_link` takes a quote id, and a quote's price is set by the catalog or an accepted `propose_discount`.
+- Chat, dashboard and scripts share one SQLite file (`DB_PATH`, default `data/peaje-asa.db`). Build packages with `tsc -b` before running the Next apps; they load workspace packages from `dist`.

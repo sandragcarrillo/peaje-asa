@@ -36,13 +36,15 @@ providers/            three mock inference providers that answer with 402
 
 ## Setup
 
-1. Node 20.6+. `npm install`
+1. Node 22.13+ (the ledger uses `node:sqlite`). `npm install`
 2. `cp .env.example .env` and fill in your Airwallex sandbox keys (Account > Developer > API keys) and Metal testnet key/RPC.
 3. In the Airwallex sandbox web app, open **Payments** and finish the setup so card payments are active. Without it every payment call returns `configuration_error`. A sandbox business registered in Colombia can't activate Payments, so register it in another country.
 4. Create the order signing key: `npm run keys:order` (appends `ORDER_SIGNING_KEY` to `.env`).
 5. Smoke test Airwallex: `npm run check:airwallex`
 6. Money rails end to end (AI cost, card payment, signed order, owner payout): `npm run m1 -- --wait-link`, then pay the printed link with test card `4035 5010 0000 0008`, any future expiry and CVC.
-7. Start the mock providers on their own: `npm run dev:providers`
+7. Add `ANTHROPIC_API_KEY` to `.env` (the mock providers forward paid calls to Claude), then start them: `npm run dev:providers`
+8. In another terminal, the customer chat: `npm run dev:chat` and open http://localhost:3000. Each agent bubble shows the tier that answered and what the call cost; the footer shows the conversation's AI spend. Conversations, orders and costs go to `data/peaje-asa.db` (override with `DB_PATH`).
+9. Tests (no keys needed): `npm test`
 
 Sandbox only. No real money.
 
