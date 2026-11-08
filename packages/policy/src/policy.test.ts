@@ -14,11 +14,11 @@ test("discovery runs on the cheap tier", () => {
 });
 
 test("small sale gets mid, big sale gets premium", () => {
-  const beans = findProduct("BEAN-HUILA-250")!;
+  const beans = findProduct(p.catalog, "BEAN-HUILA-250")!;
   const small = aiBudgetFor(expectedMargin(beans.listPrice, beans.unitCost, 2), p); // 16 margin -> 0.32
   assert.equal((chooseTier(small, 0.02, 2, offers, p) as any).tier, "mid");
 
-  const machine = findProduct("MACH-ESPRESSO-HOME")!;
+  const machine = findProduct(p.catalog, "MACH-ESPRESSO-HOME")!;
   const big = aiBudgetFor(expectedMargin(machine.listPrice, machine.unitCost), p); // 150 margin -> 3.00
   assert.equal((chooseTier(big, 0.02, 2, offers, p) as any).tier, "premium");
 });
@@ -36,11 +36,11 @@ test("slow providers are skipped", () => {
 });
 
 test("discount rules", () => {
-  const m = findProduct("MACH-ESPRESSO-HOME")!; // 480 list, 330 cost
+  const m = findProduct(p.catalog, "MACH-ESPRESSO-HOME")!; // 480 list, 330 cost
   assert.deepEqual(checkOffer(m.listPrice, 450, m.unitCost, p), { ok: true });
   assert.deepEqual(checkOffer(m.listPrice, 430, m.unitCost, p), { ok: false, reason: "below_margin_floor" });
   assert.equal(lowestAutoPrice(m.listPrice, m.unitCost, p), 440); // margin floor binds before the 10% cap
-  const b = findProduct("BEAN-HUILA-250")!; // 14 list, 6 cost
+  const b = findProduct(p.catalog, "BEAN-HUILA-250")!; // 14 list, 6 cost
   assert.equal(lowestAutoPrice(b.listPrice, b.unitCost, p), 12.6); // 10% cap binds
   assert.deepEqual(checkOffer(b.listPrice, 11, b.unitCost, p), { ok: false, reason: "needs_owner_approval" });
 });

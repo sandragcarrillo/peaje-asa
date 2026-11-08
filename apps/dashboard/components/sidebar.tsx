@@ -44,7 +44,7 @@ export function Sidebar({ shop, id, items, chatUrl }: { shop: string; id: string
       </div>
       <div className="space-y-3 border-t border-border pt-4">
         <a href={chatUrl} target="_blank" rel="noreferrer" className="btn btn-secundario btn-chico btn-ancho">Open the shop chat</a>
-        <p className="px-3 font-mono text-[10px] text-muted">Airwallex sandbox · Metal float simulated until M5</p>
+        <p className="px-3 font-mono text-[10px] text-muted">Airwallex sandbox · Metal testnet</p>
       </div>
     </aside>
   );

@@ -95,7 +95,7 @@ try {
 
   for (const k of CASES) {
     if (!store.get(k.id)) {
-      const p = findProduct(k.sku)!;
+      const p = findProduct(policy.catalog, k.sku)!;
       const c: Conversation = store.getOrCreate(k.id);
       c.transcript = k.chat.map(([from, text]) => ({ from, text, at: now() }));
       c.quotes.push({ id: "q1", sku: k.sku, name: p.name, qty: k.qty, listPrice: p.listPrice, unitPrice: k.unitPrice, total: k.qty * k.unitPrice, currency: policy.currency, createdAt: now() });
@@ -107,7 +107,7 @@ try {
   const unpaid = () => CASES.filter((k) => store.get(k.id)!.status !== "paid");
   if (unpaid().length) {
     console.log("1. Pay these links with the test card 4035 5010 0000 0008 (any future expiry and CVC):");
-    for (const k of unpaid()) console.log(`   ${store.get(k.id)!.payment!.url}  ${k.qty} x ${findProduct(k.sku)!.name}, ${k.qty * k.unitPrice} USD`);
+    for (const k of unpaid()) console.log(`   ${store.get(k.id)!.payment!.url}  ${k.qty} x ${findProduct(policy.catalog, k.sku)!.name}, ${k.qty * k.unitPrice} USD`);
     const deadline = Date.now() + 20 * 60_000;
     while (unpaid().length) {
       if (Date.now() > deadline) throw new Error(`Not paid in time: ${unpaid().map((k) => k.id).join(", ")}`);

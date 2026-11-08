@@ -1,10 +1,10 @@
 /**
- * Conversations, in the same SQLite file as the ledger so the chat and the dashboard see them.
+ * Conversations, in the same SQLite file as the ledger, one set per shop.
  * `llmMessages` is the exact Messages API history and is append-only: earlier turns are never
  * edited (thinking blocks are only valid in the conversation that produced them).
  */
 import type Anthropic from "@anthropic-ai/sdk";
-import { openDatabase, defaultDbPath } from "@peaje-asa/ledger";
+import { DEFAULT_SHOP, ensureShopColumn, openDatabase, defaultDbPath } from "@peaje-asa/ledger";
 import type { Currency, ModelTier } from "@peaje-asa/policy";
 
 export interface Quote {
@@ -62,13 +62,15 @@ export interface Conversation {
 export class ConversationStore {
   private db;
 
-  constructor(path = defaultDbPath()) {
+  /** One shop's conversations. Ids are global, so a write never takes over another shop's row. */
+  constructor(path = defaultDbPath(), readonly shopId = DEFAULT_SHOP) {
     this.db = openDatabase(path);
     this.db.exec("CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, updated_at TEXT NOT NULL, body TEXT NOT NULL)");
+    ensureShopColumn(this.db, "conversations");
   }
 
   get(id: string): Conversation | undefined {
-    const row = this.db.prepare("SELECT body FROM conversations WHERE id = ?").get(id) as { body: string } | undefined;
+    const row = this.db.prepare("SELECT body FROM conversations WHERE id = ? AND shop_id = ?").get(id, this.shopId) as { body: string } | undefined;
     return row ? JSON.parse(row.body) : undefined;
   }
 
@@ -80,11 +82,12 @@ export class ConversationStore {
   }
 
   save(c: Conversation) {
-    this.db.prepare("INSERT INTO conversations (id, updated_at, body) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, body = excluded.body")
-      .run(c.id, new Date().toISOString(), JSON.stringify(c));
+    const r = this.db.prepare("INSERT INTO conversations (id, shop_id, updated_at, body) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, body = excluded.body WHERE conversations.shop_id = excluded.shop_id")
+      .run(c.id, this.shopId, new Date().toISOString(), JSON.stringify(c));
+    if (r.changes !== 1) throw new Error(`Conversation ${c.id} belongs to another shop`);
   }
 
   list(): Conversation[] {
-    return (this.db.prepare("SELECT body FROM conversations ORDER BY updated_at DESC").all() as { body: string }[]).map((r) => JSON.parse(r.body));
+    return (this.db.prepare("SELECT body FROM conversations WHERE shop_id = ? ORDER BY updated_at DESC").all(this.shopId) as { body: string }[]).map((r) => JSON.parse(r.body));
   }
 }

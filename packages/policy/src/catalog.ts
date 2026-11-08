@@ -1,5 +1,6 @@
 /**
- * Seeded demo catalog: a specialty coffee shop in Bogotá that sells beans and brewing gear.
+ * Products and the sample catalog. Each shop keeps its own catalog in its policy; the sample is the
+ * demo shop, a specialty coffee shop in Bogotá that sells beans and brewing gear.
  * List prices and unit costs are money rules, so they live here and never in prompts.
  * Small items carry wide margins; machines carry thin ones, which is where discounts get tight.
  */
@@ -7,12 +8,14 @@
 export interface Product {
   sku: string;
   name: string;
-  category: "beans" | "brewing" | "machines" | "accessories";
+  category: string;
   listPrice: number;
   unitCost: number;
+  /** Taken off sale. Kept so quotes and orders that name it still resolve. */
+  archived?: boolean;
 }
 
-export const catalog: readonly Product[] = [
+export const sampleCatalog: readonly Product[] = [
   { sku: "BEAN-HUILA-250", name: "Huila washed, 250 g", category: "beans", listPrice: 14, unitCost: 6 },
   { sku: "BEAN-NARINO-250", name: "Nariño honey, 250 g", category: "beans", listPrice: 16, unitCost: 7 },
   { sku: "BEAN-SIERRA-1K", name: "Sierra Nevada blend, 1 kg", category: "beans", listPrice: 42, unitCost: 21 },
@@ -30,6 +33,6 @@ export const catalog: readonly Product[] = [
   { sku: "MACH-COLDBREW-10L", name: "Cold brew tower, 10 L", category: "machines", listPrice: 390, unitCost: 260 },
 ];
 
-export function findProduct(sku: string): Product | undefined {
+export function findProduct(catalog: readonly Product[], sku: string): Product | undefined {
   return catalog.find((p) => p.sku === sku);
 }

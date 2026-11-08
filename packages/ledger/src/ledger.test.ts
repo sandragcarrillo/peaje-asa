@@ -32,3 +32,21 @@ test("signed orders round-trip and can't be overwritten", () => {
   assert.ok(verifyOrder(ledger.order("o1")!));
   assert.throws(() => ledger.addOrder({ ...order, total: 1 }));
 });
+
+test("each shop reads only its own book, and shops get free ids", async () => {
+  const { ShopStore } = await import("./index.js");
+  const path = join(mkdtempSync(join(tmpdir(), "ledger-")), "t.db");
+  const a = new Ledger("USD", path, "shop-a");
+  const b = new Ledger("USD", path, "shop-b");
+  a.add({ kind: "sale", orderId: "o1", amount: 28, cogs: 12, currency: "USD", at });
+  assert.equal(a.cash(), 28);
+  assert.equal(b.cash(), 0);
+  assert.equal(b.order("o1"), undefined);
+
+  const shops = new ShopStore(path);
+  assert.equal(shops.freeId("Café Ñandú"), "cafe-nandu");
+  shops.create({ id: "cafe-nandu", name: "Café Ñandú", about: "x", ownerEmail: "A@x.com", passwordHash: "h", policy: {} as any });
+  assert.equal(shops.freeId("Café Ñandú"), "cafe-nandu-2");
+  assert.equal(shops.byEmail(" a@X.com ")?.id, "cafe-nandu"); // emails are stored and looked up lowercased
+  assert.throws(() => shops.create({ id: "other", name: "o", about: "x", ownerEmail: "a@x.com", passwordHash: "h", policy: {} as any }));
+});

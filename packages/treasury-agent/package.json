@@ -6,5 +6,5 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": { "build": "tsc -b" },
-  "dependencies": { "@peaje-asa/policy": "*", "@peaje-asa/ledger": "*", "@peaje-asa/airwallex": "*", "@peaje-asa/metal": "*" }
+  "dependencies": { "@peaje-asa/policy": "*", "@peaje-asa/ledger": "*", "@peaje-asa/airwallex": "*", "@peaje-asa/metal": "*", "@metalntwx/metal-pay": "0.3.4", "viem": "^2.57.16" }
 }

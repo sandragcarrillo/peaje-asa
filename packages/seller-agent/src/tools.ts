@@ -4,7 +4,7 @@
  * quote's price was set by the catalog or by a discount policy accepted.
  */
 import type Anthropic from "@anthropic-ai/sdk";
-import { catalog, checkOffer, findProduct, lowestAutoPrice, type OwnerPolicy } from "@peaje-asa/policy";
+import { checkOffer, findProduct, lowestAutoPrice, type OwnerPolicy } from "@peaje-asa/policy";
 import type { Conversation, Quote } from "./store.js";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -83,7 +83,7 @@ const ok = (v: unknown): ToolResult => ({ content: JSON.stringify(v) });
 const fail = (msg: string): ToolResult => ({ content: JSON.stringify({ error: msg }), isError: true });
 
 function newQuote(c: Conversation, sku: string, qty: number, unitPrice: number, policy: OwnerPolicy): Quote {
-  const p = findProduct(sku)!;
+  const p = findProduct(policy.catalog, sku)!;
   const q: Quote = {
     id: `q${c.quotes.length + 1}`, sku, name: p.name, qty, listPrice: p.listPrice, unitPrice,
     total: round2(unitPrice * qty), currency: policy.currency, createdAt: new Date().toISOString(),
@@ -100,12 +100,13 @@ export async function runTool(name: string, input: any, c: Conversation, ctx: To
   switch (name) {
     case "search_catalog": {
       const words = String(input.query ?? "").toLowerCase().split(/\s+/).filter(Boolean);
-      const hits = catalog.filter((p) => words.length === 0 || words.some((w) => `${p.sku} ${p.name} ${p.category}`.toLowerCase().includes(w)));
-      return ok((hits.length ? hits : catalog).map((p) => ({ sku: p.sku, name: p.name, category: p.category, list_price: p.listPrice, currency: policy.currency })));
+      const onSale = policy.catalog.filter((p) => !p.archived);
+      const hits = onSale.filter((p) => words.length === 0 || words.some((w) => `${p.sku} ${p.name} ${p.category}`.toLowerCase().includes(w)));
+      return ok((hits.length ? hits : onSale).map((p) => ({ sku: p.sku, name: p.name, category: p.category, list_price: p.listPrice, currency: policy.currency })));
     }
     case "quote": {
-      const p = findProduct(input.sku);
-      if (!p) return fail(`unknown sku ${input.sku}`);
+      const p = findProduct(policy.catalog, input.sku);
+      if (!p || p.archived) return fail(`unknown sku ${input.sku}`);
       const qty = Number(input.qty);
       if (!Number.isInteger(qty) || qty < 1 || qty > 50) return fail("qty must be an integer from 1 to 50");
       return ok(publicQuote(newQuote(c, p.sku, qty, p.listPrice, policy)));
@@ -113,7 +114,7 @@ export async function runTool(name: string, input: any, c: Conversation, ctx: To
     case "propose_discount": {
       const q = c.quotes.find((x) => x.id === input.quote_id);
       if (!q) return fail(`unknown quote ${input.quote_id}`);
-      const p = findProduct(q.sku)!;
+      const p = findProduct(policy.catalog, q.sku)!;
       const price = round2(Number(input.unit_price));
       const verdict = checkOffer(p.listPrice, price, p.unitCost, policy);
       if (verdict.ok) return ok({ accepted: true, ...publicQuote(newQuote(c, q.sku, q.qty, price, policy)) });

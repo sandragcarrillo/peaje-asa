@@ -31,6 +31,8 @@ export interface SellerDeps {
   awx: Airwallex;
   signer: OrderSigner;
   shopName?: string;
+  /** One line on what the shop sells and where, e.g. "a specialty coffee shop in Bogotá that sells beans and coffee equipment". */
+  shopAbout?: string;
 }
 
 /** Model calls per customer message, tool round trips included. */
@@ -47,8 +49,8 @@ const REPLIES = {
     es: "Gracias por tu paciencia. El dueño ya tiene los detalles y te responde por aquí en breve.",
   },
   refusal: {
-    en: "Sorry, I can't help with that here. I can help you choose and buy our coffee and equipment.",
-    es: "Lo siento, con eso no te puedo ayudar por aquí. Sí te ayudo a elegir y comprar nuestro café y equipos.",
+    en: "Sorry, I can't help with that here. I can help you choose and buy from our shop.",
+    es: "Lo siento, con eso no te puedo ayudar por aquí. Sí te ayudo a elegir y comprar en nuestra tienda.",
   },
 };
 
@@ -61,9 +63,11 @@ function fixedReply(c: Conversation, kind: keyof typeof REPLIES) {
   return REPLIES[kind][looksSpanish(recent) ? "es" : "en"];
 }
 
-export function systemPrompt(shopName: string) {
+export const SAMPLE_ABOUT = "a specialty coffee shop in Bogotá that sells beans and coffee equipment";
+
+export function systemPrompt(shopName: string, about = SAMPLE_ABOUT) {
   return [
-    `You are the sales assistant of ${shopName}, a specialty coffee shop in Bogotá that sells beans and coffee equipment.`,
+    `You are the sales assistant of ${shopName}, ${about}.`,
     "You chat with customers on a messaging app. Reply in the customer's language, in short chat messages (one to three sentences), friendly and direct. Plain text only: no Markdown, no SKUs.",
     "Prices only come from your tools and are in USD. Never state a price you did not get from search_catalog, quote or propose_discount.",
     "To quote, find the product with search_catalog, then call quote. If the customer asks for a better price, call propose_discount; never promise a discount the tool did not accept. If it is refused, you may offer the lowest price it returns.",
@@ -135,7 +139,7 @@ export class SellerAgent {
       if (message?.trim()) c.transcript.push({ from: "owner", text: message.trim(), at: now() });
       const t = c.escalation.terms;
       if (decision === "approved" && t) {
-        const p = findProduct(t.sku)!;
+        const p = findProduct(this.deps.policy.catalog, t.sku)!;
         const q: Quote = { id: `q${c.quotes.length + 1}`, sku: t.sku, name: p.name, qty: t.qty, listPrice: p.listPrice, unitPrice: t.unitPrice, total: t.total, currency: t.currency, createdAt: now() };
         c.quotes.push(q);
         c.activeQuoteId = q.id;
@@ -207,7 +211,7 @@ export class SellerAgent {
       try {
         const call = await payer.payAndCall<BetaMessage>(
           providers[decision.tier],
-          { system: systemPrompt(this.deps.shopName ?? "Tostadero Andino"), tools: sellerTools, messages: c.llmMessages },
+          { system: systemPrompt(this.deps.shopName ?? "Tostadero Andino", this.deps.shopAbout), tools: sellerTools, messages: c.llmMessages },
           round2(budget - c.aiSpent),
         );
         this.bookAiCost(c, call.provider, call.pricePaid, call.txHash);
@@ -274,7 +278,7 @@ export class SellerAgent {
   private activeMargin(c: Conversation): number | undefined {
     const q = this.activeQuote(c);
     if (!q) return undefined;
-    return (q.unitPrice - findProduct(q.sku)!.unitCost) * q.qty;
+    return (q.unitPrice - findProduct(this.deps.policy.catalog, q.sku)!.unitCost) * q.qty;
   }
 
   private activeTerms(c: Conversation) {
@@ -357,7 +361,7 @@ export class SellerAgent {
       total: q.total, currency: q.currency, paymentIntentId, paymentLinkId: p.linkId, createdAt: now(),
     });
     ledger.addOrder(order);
-    ledger.add({ kind: "sale", orderId: order.orderId, amount: q.total, cogs: round2(findProduct(q.sku)!.unitCost * q.qty), currency: policy.currency, at: now() });
+    ledger.add({ kind: "sale", orderId: order.orderId, amount: q.total, cogs: round2(findProduct(this.deps.policy.catalog, q.sku)!.unitCost * q.qty), currency: policy.currency, at: now() });
     p.paymentIntentId = paymentIntentId;
     c.status = "paid";
     c.transcript.push({ from: "system", text: `Payment verified with Airwallex. Order ${order.orderId} signed.`, at: now() });

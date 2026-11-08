@@ -4,7 +4,7 @@
  * and only for those terms. If the amount changes, the owner approves again.
  */
 import { createHash, randomUUID } from "node:crypto";
-import { canonicalJson, defaultDbPath, openDatabase } from "@peaje-asa/ledger";
+import { canonicalJson, DEFAULT_SHOP, defaultDbPath, ensureShopColumn, openDatabase } from "@peaje-asa/ledger";
 import type { Currency } from "@peaje-asa/policy";
 
 export interface ApprovalTerms {
@@ -49,12 +49,14 @@ const now = () => new Date().toISOString();
 export class TreasuryStore {
   private db;
 
-  constructor(path = defaultDbPath()) {
+  constructor(path = defaultDbPath(), readonly shopId = DEFAULT_SHOP) {
     this.db = openDatabase(path);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS approvals (id TEXT PRIMARY KEY, terms_hash TEXT NOT NULL, status TEXT NOT NULL, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS payouts (request_id TEXT PRIMARY KEY, status TEXT NOT NULL, body TEXT NOT NULL);
     `);
+    ensureShopColumn(this.db, "approvals");
+    ensureShopColumn(this.db, "payouts");
   }
 
   // --- Approvals
@@ -65,19 +67,19 @@ export class TreasuryStore {
     const open = this.approvals().find((a) => a.termsHash === hash && (a.status === "pending" || a.status === "approved"));
     if (open) return open;
     const a: Approval = { id: `apr_${randomUUID().slice(0, 8)}`, terms, termsHash: hash, reason, status: "pending", createdAt: now() };
-    this.db.prepare("INSERT INTO approvals (id, terms_hash, status, body) VALUES (?, ?, ?, ?)").run(a.id, hash, a.status, JSON.stringify(a));
+    this.db.prepare("INSERT INTO approvals (shop_id, id, terms_hash, status, body) VALUES (?, ?, ?, ?, ?)").run(this.shopId, a.id, hash, a.status, JSON.stringify(a));
     return a;
   }
 
   approval(id: string): Approval | undefined {
-    const row = this.db.prepare("SELECT body FROM approvals WHERE id = ?").get(id) as { body: string } | undefined;
+    const row = this.db.prepare("SELECT body FROM approvals WHERE id = ? AND shop_id = ?").get(id, this.shopId) as { body: string } | undefined;
     return row ? JSON.parse(row.body) : undefined;
   }
 
   approvals(status?: Approval["status"]): Approval[] {
     const rows = (status
-      ? this.db.prepare("SELECT body FROM approvals WHERE status = ? ORDER BY rowid").all(status)
-      : this.db.prepare("SELECT body FROM approvals ORDER BY rowid").all()) as { body: string }[];
+      ? this.db.prepare("SELECT body FROM approvals WHERE status = ? AND shop_id = ? ORDER BY rowid").all(status, this.shopId)
+      : this.db.prepare("SELECT body FROM approvals WHERE shop_id = ? ORDER BY rowid").all(this.shopId)) as { body: string }[];
     return rows.map((r) => JSON.parse(r.body));
   }
 
@@ -102,7 +104,7 @@ export class TreasuryStore {
 
   /** Compare-and-set on status, so two processes can't both use the same approval. */
   private setApproval(a: Approval, expected: Approval["status"]) {
-    const r = this.db.prepare("UPDATE approvals SET status = ?, body = ? WHERE id = ? AND status = ?").run(a.status, JSON.stringify(a), a.id, expected);
+    const r = this.db.prepare("UPDATE approvals SET status = ?, body = ? WHERE id = ? AND status = ? AND shop_id = ?").run(a.status, JSON.stringify(a), a.id, expected, this.shopId);
     if (r.changes !== 1) throw new Error(`Approval ${a.id} changed under us`);
     return a;
   }
@@ -111,16 +113,16 @@ export class TreasuryStore {
 
   startPayout(p: Omit<Payout, "requestId" | "status" | "createdAt">): Payout {
     const payout: Payout = { ...p, requestId: randomUUID(), status: "creating", createdAt: now() };
-    this.db.prepare("INSERT INTO payouts (request_id, status, body) VALUES (?, ?, ?)").run(payout.requestId, payout.status, JSON.stringify(payout));
+    this.db.prepare("INSERT INTO payouts (shop_id, request_id, status, body) VALUES (?, ?, ?, ?)").run(this.shopId, payout.requestId, payout.status, JSON.stringify(payout));
     return payout;
   }
 
   savePayout(p: Payout) {
-    this.db.prepare("UPDATE payouts SET status = ?, body = ? WHERE request_id = ?").run(p.status, JSON.stringify(p), p.requestId);
+    this.db.prepare("UPDATE payouts SET status = ?, body = ? WHERE request_id = ? AND shop_id = ?").run(p.status, JSON.stringify(p), p.requestId, this.shopId);
   }
 
   payouts(): Payout[] {
-    return (this.db.prepare("SELECT body FROM payouts ORDER BY rowid").all() as { body: string }[]).map((r) => JSON.parse(r.body));
+    return (this.db.prepare("SELECT body FROM payouts WHERE shop_id = ? ORDER BY rowid").all(this.shopId) as { body: string }[]).map((r) => JSON.parse(r.body));
   }
 
   /** Created or sent but not settled: the money is committed even though the ledger hasn't booked it. */

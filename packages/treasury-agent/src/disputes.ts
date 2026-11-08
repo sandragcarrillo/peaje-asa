@@ -6,7 +6,7 @@
 import type { Airwallex } from "@peaje-asa/airwallex";
 import { verifyOrder, type Ledger, type SignedOrder } from "@peaje-asa/ledger";
 import type { InferencePayer, InferenceProvider } from "@peaje-asa/metal";
-import { chooseTier, decideDispute, findProduct, type DisputeDecision, type DisputeFacts, type ModelTier, type OwnerPolicy } from "@peaje-asa/policy";
+import { chooseTier, decideDispute, findProduct, type Product, type DisputeDecision, type DisputeFacts, type ModelTier, type OwnerPolicy } from "@peaje-asa/policy";
 import { textPdf } from "./pdf.js";
 import type { Approval, TreasuryStore } from "./store.js";
 
@@ -97,7 +97,7 @@ export class ProviderDisputeWriter implements DisputeWriter {
   }
 }
 
-export function evidencePdf(order: SignedOrder, chat: ChatLine[] | undefined, ledger: Ledger, defense: string, shopName: string) {
+export function evidencePdf(order: SignedOrder, chat: ChatLine[] | undefined, ledger: Ledger, defense: string, shopName: string, catalog: readonly Product[]) {
   const f = ledger.fulfillment(order.orderId);
   const lines = [
     `${shopName}: dispute evidence for order ${order.orderId}`,
@@ -108,7 +108,7 @@ export function evidencePdf(order: SignedOrder, chat: ChatLine[] | undefined, le
     "Signed order",
     `Order: ${order.orderId}   Created: ${order.createdAt}`,
     `Payment: ${order.paymentIntentId}${order.paymentLinkId ? `   Payment link: ${order.paymentLinkId}` : ""}`,
-    ...order.items.map((i) => `  ${i.qty} x ${findProduct(i.sku)?.name ?? i.sku} (${i.sku}) at ${i.unitPrice} ${order.currency}`),
+    ...order.items.map((i) => `  ${i.qty} x ${findProduct(catalog, i.sku)?.name ?? i.sku} (${i.sku}) at ${i.unitPrice} ${order.currency}`),
     `Total: ${order.total} ${order.currency}`,
     `Ed25519 signature (base64, over the canonical JSON of the fields above): ${order.signature}`,
     `Verifies: ${verifyOrder(order) ? "yes" : "NO"}`,
@@ -198,19 +198,20 @@ async function reviewOne(deps: DisputeDeps, d: AwxDispute): Promise<DisputeRevie
     return { dispute: d, orderId: order.orderId, facts, decision, approval };
   }
 
+  const catalog = policy.catalog;
   const defense = deps.writer ? await deps.writer.write(d, order, chat, facts) : templateDefense(d, order, facts);
-  const file = await awx.uploadFile(`${order.orderId}.pdf`.slice(-50), evidencePdf(order, chat, ledger, defense, deps.shopName), "application/pdf", "Signed order and chat");
+  const file = await awx.uploadFile(`${order.orderId}.pdf`.slice(-50), evidencePdf(order, chat, ledger, defense, deps.shopName, policy.catalog), "application/pdf", "Signed order and chat");
   const f = ledger.fulfillment(order.orderId);
   await awx.challengeDispute(d.id, {
     order_info: {
       id: order.orderId, created_at: order.createdAt, total_amount: order.total, total_currency: order.currency,
-      products: order.items.map((i) => ({ sku: i.sku, code: i.sku, name: findProduct(i.sku)?.name ?? i.sku, quantity: i.qty, unit_price: i.unitPrice, type: "physical" })),
+      products: order.items.map((i) => ({ sku: i.sku, code: i.sku, name: findProduct(catalog, i.sku)?.name ?? i.sku, quantity: i.qty, unit_price: i.unitPrice, type: "physical" })),
     },
     delivery_info: f ? { shipping_company: f.carrier, tracking_number: f.tracking, shipped_at: f.shippedAt, delivered_at: f.deliveredAt } : undefined,
     seller_info: { name: deps.shopName, store_name: deps.shopName },
     product_type: "PHYSICAL_GOODS", // required at CHARGEBACK
     reason: facts.delivery !== "none" ? "PRODUCT_RECEIVED" : "OTHER_REASONS",
-    product_description: order.items.map((i) => findProduct(i.sku)?.name ?? i.sku).join(", "),
+    product_description: order.items.map((i) => findProduct(catalog, i.sku)?.name ?? i.sku).join(", "),
     supporting_documents: {
       documents: [{ type: "OTHER", file_ids: [file.file_id], description: defense.slice(0, 1000) }],
       customer_communication_documents: [file.file_id],

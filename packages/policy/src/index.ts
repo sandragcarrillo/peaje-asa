@@ -7,11 +7,14 @@
  */
 
 export * from "./catalog.js";
+import { sampleCatalog, type Product } from "./catalog.js";
 
 export type Currency = "COP" | "USD" | "EUR";
 
 export interface OwnerPolicy {
   currency: Currency;
+  /** What the shop sells, with list prices and unit costs. Prices are money rules too, so they live here. */
+  catalog: readonly Product[];
   /** Minimum margin the agent may accept on any sale, as a fraction (0.25 = 25%). */
   marginFloor: number;
   /** Max discount the seller can offer without asking, as a fraction of list price. */
@@ -58,6 +61,7 @@ export type AiAgent = "seller" | "disputes";
 
 export const defaultPolicy: OwnerPolicy = {
   currency: "USD",
+  catalog: sampleCatalog,
   marginFloor: 0.25,
   maxAutoDiscount: 0.1,
   reserveFloor: 500,

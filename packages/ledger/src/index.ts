@@ -2,7 +2,7 @@
  * Our own record of everything that happened. Airwallex does not store signed
  * orders or reserves, so this ledger is the source of truth for the dashboard,
  * dispute evidence and the advance offer.
- * Backed by SQLite (node:sqlite) so the chat, the dashboard and scripts share one book.
+ * Backed by SQLite (node:sqlite) so the app and the scripts share one file; each shop has its own book in it.
  * Pass ":memory:" for throwaway runs and tests.
  */
 import { mkdirSync } from "node:fs";
@@ -11,6 +11,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { Currency } from "@peaje-asa/policy";
 
 export * from "./signing.js";
+export * from "./shops.js";
 
 export interface OrderItem { sku: string; qty: number; unitPrice: number }
 
@@ -61,6 +62,16 @@ export function openDatabase(path: string) {
   return db;
 }
 
+/** The shop that existed before shops were per account: rows written before then belong to it. */
+export const DEFAULT_SHOP = "tostadero-andino";
+
+/** Adds shop_id to a table created before shops existed (its rows go to the default shop) and indexes it. */
+export function ensureShopColumn(db: DatabaseSync, table: string) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === "shop_id")) db.exec(`ALTER TABLE ${table} ADD COLUMN shop_id TEXT NOT NULL DEFAULT '${DEFAULT_SHOP}'`);
+  db.exec(`CREATE INDEX IF NOT EXISTS ${table}_shop ON ${table} (shop_id)`);
+}
+
 /** DB_PATH from the environment, else data/peaje-asa.db under the current directory. */
 export function defaultDbPath() {
   return process.env.DB_PATH ?? "data/peaje-asa.db";
@@ -69,33 +80,36 @@ export function defaultDbPath() {
 export class Ledger {
   private db: DatabaseSync;
 
-  constructor(readonly currency: Currency = "USD", path = defaultDbPath()) {
+  /** One book per shop, all in the same file: every read and write is scoped to `shopId`. */
+  constructor(readonly currency: Currency = "USD", path = defaultDbPath(), readonly shopId = DEFAULT_SHOP) {
     this.db = openDatabase(path);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS entries (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, at TEXT NOT NULL, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS orders (order_id TEXT PRIMARY KEY, body TEXT NOT NULL);
     `);
+    ensureShopColumn(this.db, "entries");
+    ensureShopColumn(this.db, "orders");
   }
 
   add(e: LedgerEntry) {
     if ("currency" in e && e.currency !== this.currency) {
       throw new Error(`Ledger is in ${this.currency}; got ${e.kind} in ${e.currency}. Convert before recording.`);
     }
-    this.db.prepare("INSERT INTO entries (kind, at, body) VALUES (?, ?, ?)").run(e.kind, e.at, JSON.stringify(e));
+    this.db.prepare("INSERT INTO entries (shop_id, kind, at, body) VALUES (?, ?, ?, ?)").run(this.shopId, e.kind, e.at, JSON.stringify(e));
   }
 
   /** Signed orders are immutable: a second write for the same id is refused. */
   addOrder(o: SignedOrder) {
-    this.db.prepare("INSERT INTO orders (order_id, body) VALUES (?, ?)").run(o.orderId, JSON.stringify(o));
+    this.db.prepare("INSERT INTO orders (shop_id, order_id, body) VALUES (?, ?, ?)").run(this.shopId, o.orderId, JSON.stringify(o));
   }
 
   order(id: string): SignedOrder | undefined {
-    const row = this.db.prepare("SELECT body FROM orders WHERE order_id = ?").get(id) as { body: string } | undefined;
+    const row = this.db.prepare("SELECT body FROM orders WHERE order_id = ? AND shop_id = ?").get(id, this.shopId) as { body: string } | undefined;
     return row ? JSON.parse(row.body) : undefined;
   }
 
   orders(): SignedOrder[] {
-    return (this.db.prepare("SELECT body FROM orders").all() as { body: string }[]).map((r) => JSON.parse(r.body));
+    return (this.db.prepare("SELECT body FROM orders WHERE shop_id = ?").all(this.shopId) as { body: string }[]).map((r) => JSON.parse(r.body));
   }
 
   /** Disputes arrive with the payment intent; this is how they find the order. */
@@ -134,7 +148,7 @@ export class Ledger {
   }
 
   all(): LedgerEntry[] {
-    return (this.db.prepare("SELECT body FROM entries ORDER BY id").all() as { body: string }[]).map((r) => JSON.parse(r.body));
+    return (this.db.prepare("SELECT body FROM entries WHERE shop_id = ? ORDER BY id").all(this.shopId) as { body: string }[]).map((r) => JSON.parse(r.body));
   }
 
   /** Profit and loss, optionally only for entries at or after `since` (ISO time). */

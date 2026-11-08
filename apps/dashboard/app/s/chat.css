@@ -1,0 +1,48 @@
+/* The shop chat, a messaging app look, scoped to .chat-app so it never leaks into the back office. */
+.chat-app {
+  --header: #008069;
+  --wall: #efeae2;
+  --in: #ffffff;
+  --out: #d9fdd3;
+  --ink: #111b21;
+  --muted: #667781;
+  --system: #ffeecd;
+  --accent: #00a884;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  min-height: 100dvh; background: #d1d7db; color: var(--ink); font: 14.5px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; padding-top: 1px;
+
+  
+  .phone { max-width: 440px; height: 100dvh; margin: 0 auto; display: flex; flex-direction: column; background: var(--wall); box-shadow: 0 0 24px rgb(0 0 0 / 0.15); }
+  @media (min-width: 600px) { .phone { height: calc(100dvh - 40px); margin-top: 20px; border-radius: 12px; overflow: hidden; } }
+  
+  .header { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--header); color: #fff; }
+  .avatar { width: 38px; height: 38px; border-radius: 50%; background: #f0c27a; color: #5b3a12; display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+  .who { flex: 1; min-width: 0; }
+  .who b { display: block; font-size: 16px; font-weight: 600; }
+  .who span { font-size: 12.5px; opacity: 0.85; }
+  .header button { background: none; border: 1px solid rgb(255 255 255 / 0.5); color: #fff; border-radius: 14px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+  
+  .feed { flex: 1; overflow-y: auto; padding: 12px 10px; display: flex; flex-direction: column; gap: 4px; }
+  .row { display: flex; }
+  .row.customer { justify-content: flex-end; }
+  .bubble { max-width: 82%; padding: 6px 8px 4px 9px; border-radius: 8px; box-shadow: 0 1px 0.5px rgb(11 20 26 / 0.13); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .agent .bubble { background: var(--in); border-top-left-radius: 0; }
+  .customer .bubble { background: var(--out); border-top-right-radius: 0; }
+  .bubble a { color: #027eb5; }
+  .meta { display: flex; justify-content: flex-end; gap: 6px; align-items: center; margin-top: 2px; font-size: 11px; color: var(--muted); }
+  .chip { font-family: var(--mono); font-size: 10.5px; padding: 0 5px; border-radius: 4px; background: #f0f2f5; color: #3b4a54; }
+  .chip.cheap { background: #e7f6ec; color: #1f7a3f; }
+  .chip.mid { background: #e8f0fe; color: #1a56c4; }
+  .chip.premium { background: #fdeee4; color: #b4501a; }
+  .system { align-self: center; max-width: 90%; text-align: center; background: var(--system); color: #54656f; font-size: 12.5px; padding: 5px 10px; border-radius: 8px; margin: 6px 0; box-shadow: 0 1px 0.5px rgb(11 20 26 / 0.13); overflow-wrap: anywhere; }
+  .system.error { background: #fde2e1; color: #a12622; }
+  
+  .composer { display: flex; gap: 8px; padding: 8px; background: #f0f2f5; }
+  .composer input { flex: 1; border: none; border-radius: 20px; padding: 10px 14px; font: inherit; outline: none; background: #fff; }
+  .composer button { width: 42px; height: 42px; border-radius: 50%; border: none; background: var(--accent); color: #fff; font-size: 18px; cursor: pointer; }
+  .composer button:disabled { opacity: 0.5; cursor: default; }
+  
+  .stats { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 4px 12px; background: #f7f8fa; border-top: 1px solid #e9edef; display: flex; justify-content: space-between; }
+  .owner .bubble { background: #fff6d6; border-top-left-radius: 0; }
+  .chip.owner { background: #f6e3a1; color: #6b4e00; }
+}

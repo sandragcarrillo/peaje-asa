@@ -26,14 +26,14 @@ if (process.argv.includes("--fresh")) {
     mkdirSync(backup, { recursive: true });
     for (const f of files) renameSync(f, join(backup, basename(f)));
     // A running chat or dashboard keeps the moved file open and would keep reading it.
-    console.log(`Moved the old book to ${backup}. Restart the chat and the dashboard so they open the new one.`);
+    console.log(`Moved the old book to ${backup}. Restart the app (dashboard and chat) so it opens the new one.`);
   }
 }
 
 // Imported after DB_PATH is settled: the stores open the file when they're created.
 const { Airwallex } = await import("@peaje-asa/airwallex");
 const { Ledger, OrderSigner } = await import("@peaje-asa/ledger");
-const { metalDir, metalReady, payerFor } = await import("@peaje-asa/metal");
+const { metalReady, payerFor } = await import("@peaje-asa/metal");
 const { defaultPolicy } = await import("@peaje-asa/policy");
 const { ConversationStore, SellerAgent } = await import("@peaje-asa/seller-agent");
 const { ensurePayees } = await import("@peaje-asa/treasury-agent");
@@ -66,8 +66,9 @@ if (!(await up())) {
   if (!(await up())) throw new Error("The inference providers didn't start (npm run dev:providers)");
 }
 
-const METAL = metalDir(process.cwd());
-console.log(metalReady(METAL) ? `Paying models on Metal testnet under the agents' mandates (${METAL}).` : "Metal isn't set up (npm run metal:setup): model calls use the fake payer.");
+// The demo shop's own mandates, bound from its Agents page with the owner key in the browser.
+const METAL = join(process.cwd(), "data/shops/tostadero-andino/metal");
+console.log(metalReady(METAL) ? `Paying models on Metal testnet under the agents' mandates (${METAL}).` : "The demo shop has no Metal mandates yet (Agents page in the dashboard): model calls use the fake payer.");
 const seller = new SellerAgent({ policy, ledger, store, payer: payerFor("seller", METAL), providers: tiers, awx, signer: OrderSigner.fromEnv(), shopName: SHOP });
 
 /** A scripted customer turn, or a moment between turns (a provider changing its price). */

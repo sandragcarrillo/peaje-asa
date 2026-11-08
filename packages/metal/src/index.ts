@@ -87,3 +87,5 @@ export class FakeInferencePayer implements InferencePayer {
 }
 
 export * from "./mandate.js";
+export * from "./owner.js";
+export * from "./shop.js";

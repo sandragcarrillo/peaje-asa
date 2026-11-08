@@ -69,14 +69,14 @@ try {
   console.log(`1. Paid ${call.provider} ${call.pricePaid} USDZ for a reply: "${call.result.text}"`);
 
   // --- 2. Order and payment
-  const product = findProduct("BEAN-HUILA-250")!;
+  const product = findProduct(policy.catalog, "BEAN-HUILA-250")!;
   const items: OrderItem[] = [{ sku: product.sku, qty: 2, unitPrice: product.listPrice }];
   const total = round2(items.reduce((s, i) => s + i.qty * i.unitPrice, 0));
   const orderId = `ord_${Date.now()}`;
 
   const link: any = await awx.createPaymentLink({
     amount: total, currency: policy.currency, title: `Order ${orderId}`, reference: orderId,
-    description: items.map((i) => `${i.qty} x ${findProduct(i.sku)!.name}`).join(", "),
+    description: items.map((i) => `${i.qty} x ${findProduct(policy.catalog, i.sku)!.name}`).join(", "),
   });
   console.log(`2. Payment link for the chat: ${link.url} (${link.status})`);
 
@@ -123,7 +123,7 @@ try {
     paymentIntentId, paymentLinkId: link.id, createdAt: now(),
   });
   ledger.addOrder(order);
-  const cogs = items.reduce((s, i) => s + i.qty * findProduct(i.sku)!.unitCost, 0);
+  const cogs = items.reduce((s, i) => s + i.qty * findProduct(policy.catalog, i.sku)!.unitCost, 0);
   ledger.add({ kind: "sale", orderId, amount: total, cogs, currency: policy.currency, at: now() });
   const tampered = { ...order, total: order.total - 1 };
   console.log(`3. Verified ${paid.status} ${paid.amount} ${paid.currency}. Signed order ${orderId}: valid=${verifyOrder(order)}, tampered copy valid=${verifyOrder(tampered)}`);
