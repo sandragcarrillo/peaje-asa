@@ -11,7 +11,9 @@
 - Beneficiary schema: `POST /beneficiary_api_schemas/generate` (the guide's `/beneficiaries/schema`). CO/COP LOCAL needs bank_code routing, ID number and email/phone.
 - Mock providers sit in front of real Claude models: cheap = claude-haiku-5-5, mid = claude-sonnet-5-5, premium = claude-opus-5-5.
 - Customers pay on the hosted payment link. The sandbox account has no native API access, so raw-card confirms fail.
-- Settle simulated transfers with `simulate.settleTransfer` (a transition from SCHEDULED returns 500).
+- Each shop has an Airwallex connected account (Kit 5); the platform owns the card payments. Sales go platform to shop with `connected_account_transfers`, refunds/dispute fees and the advance repayment come back with `charges`, inventory and profit leave by Airwallex Pay (`transfers/create` with a DIGITAL_WALLET beneficiary, PAID in seconds). Nothing in the app forces a status: moves end when Airwallex says so. Bank payouts stay PROCESSING in the sandbox; only `scripts/m1-rails.ts` drives one with `simulate.settleTransfer`.
+- Money moves through `MoneyRails` (`packages/treasury-agent/src/rails.ts`); Airwallex is one adapter. Keep provider calls out of the close, the advance and the policy.
+- Connected accounts: `simulate.reviewAccount` (`force: false`); a forced ACTIVE can't move money. Transfer and charge reasons must be from Airwallex's enum.
 - Never commit `.env`.
 - Seller agent loop is manual (not the SDK tool runner) so each model call goes through a paid provider chosen by `chooseTier`. Append assistant content to `llmMessages` exactly as returned; never edit earlier turns.
 - Amounts never come from the model: `create_payment_link` takes a quote id, and a quote's price is set by the catalog or an accepted `propose_discount`.

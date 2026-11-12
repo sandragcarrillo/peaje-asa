@@ -21,8 +21,10 @@ export interface Shop {
   demo?: boolean;
   /** The address of the owner key made in the owner's browser. Set once: it owns the shop's Metal account. */
   metalOwner?: string;
-  /** The shop's Airwallex connected account, once the platform opened one. */
+  /** The shop's Airwallex connected account, once the platform opened one. Its money lives there. */
   airwallexAccountId?: string;
+  /** Airwallex accounts the shop pays by Airwallex Pay: inventory to the supplier, profit to the owner. */
+  payTo?: { supplier: { accountNumber: string; accountName: string }; owner: { accountNumber: string; accountName: string } };
 }
 
 export const slugify = (name: string) =>
@@ -69,7 +71,7 @@ export class ShopStore {
   }
 
   /** Name, about, rules and catalog can change; the id and the owner's email can't. */
-  update(id: string, patch: Partial<Pick<Shop, "name" | "about" | "policy" | "airwallexAccountId" | "passwordHash" | "metalOwner">>): Shop {
+  update(id: string, patch: Partial<Pick<Shop, "name" | "about" | "policy" | "airwallexAccountId" | "payTo" | "passwordHash" | "metalOwner">>): Shop {
     const s = this.get(id);
     if (!s) throw new Error(`No shop ${id}`);
     const next = { ...s, ...patch };

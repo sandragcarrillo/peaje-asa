@@ -2,7 +2,9 @@
  * Three mock inference providers, each in front of a real Claude model.
  * Unpaid requests get a 402 offer with the current price and advertised latency;
  * paid requests are forwarded to Claude and the Messages API response comes back as is.
- * Prices and latency can change at runtime (POST /price) to drive the "price rise" moment in the demo.
+ * Each provider prices by demand: above its capacity of paid calls in the last ten minutes, every
+ * extra call raises the price by a share of the base, and the price falls back as calls age out.
+ * Nobody sets it by hand; the agents' own traffic moves it.
  *
  * With data/metal/providers.json (written by `npm run metal:setup`) each provider sells over x402 on
  * Metal testnet: the 402 is a real `exact` offer in USDZ to the provider's own address, and Metal's
@@ -19,13 +21,41 @@ import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
 import { paymentMiddleware } from "@x402/hono";
 import { Hono } from "hono";
 
-// Prices in USDZ major units per call (0.01 = one cent), matching Kit 12's 1/2/5 cents.
+// Base prices in USDZ major units per call (0.01 = one cent), matching Kit 12's 1/2/5 cents.
+// Capacity: paid calls per window served at the base price. The premium model is the scarcest.
 const providers = [
-  { id: "cheap", port: 4101, model: "claude-haiku-5-5", price: 0.01, latencyMs: 300 },
-  { id: "mid", port: 4102, model: "claude-sonnet-5-5", price: 0.02, latencyMs: 200 },
-  { id: "premium", port: 4103, model: "claude-opus-5-5", price: 0.05, latencyMs: 150 },
+  { id: "cheap", port: 4101, model: "claude-haiku-5-5", base: 0.01, capacity: 12, latencyMs: 300, calls: [] as number[] },
+  { id: "mid", port: 4102, model: "claude-sonnet-5-5", base: 0.02, capacity: 6, latencyMs: 200, calls: [] as number[] },
+  { id: "premium", port: 4103, model: "claude-opus-5-5", base: 0.05, capacity: 3, latencyMs: 150, calls: [] as number[] },
 ];
 type Provider = (typeof providers)[number];
+
+const WINDOW_MS = Number(process.env.PROVIDER_DEMAND_WINDOW_MS ?? 10 * 60_000);
+/** Each paid call above capacity adds this share of the base price. */
+const STEP = 0.5;
+const MAX_MULTIPLE = 20;
+
+/** Paid calls in the window. */
+function demand(p: Provider) {
+  const since = Date.now() - WINDOW_MS;
+  while (p.calls.length && p.calls[0] < since) p.calls.shift();
+  return p.calls.length;
+}
+
+/** The price right now: the base up to capacity, then higher with every extra paid call. */
+function priceOf(p: Provider) {
+  const over = Math.max(0, demand(p) - p.capacity);
+  return Math.round(p.base * Math.min(MAX_MULTIPLE, 1 + STEP * over) * 10_000) / 10_000;
+}
+
+/** Counts a paid call. The next offer already carries the new price. */
+function served(p: Provider) {
+  p.calls.push(Date.now());
+  const price = priceOf(p);
+  if (price !== p.base) console.log(`provider ${p.id}: ${demand(p)} paid calls in ${WINDOW_MS / 60_000} min, price ${price} (base ${p.base})`);
+}
+
+const terms = (p: Provider) => ({ "x-price": String(priceOf(p)), "x-latency-ms": String(p.latencyMs), "x-demand": String(demand(p)), "x-capacity": String(p.capacity) });
 
 const client = process.env.ANTHROPIC_API_KEY ? new Anthropic() : undefined;
 if (!client) console.warn("ANTHROPIC_API_KEY is not set: paid calls will answer 503");
@@ -66,14 +96,6 @@ async function answer(p: Provider, raw: string): Promise<{ status: number; body:
   }
 }
 
-function setPrice(p: Provider, raw: string) {
-  const { price, latencyMs } = JSON.parse(raw || "{}");
-  if (price !== undefined) p.price = price;
-  if (latencyMs !== undefined) p.latencyMs = latencyMs;
-  console.log(`provider ${p.id} now @ ${p.price}, ${p.latencyMs} ms`);
-  return p;
-}
-
 function metalProvider(p: Provider, payTo: `0x${string}`) {
   const testnet = METAL_NETWORKS.testnet;
   const server = registerMetalScheme(new x402ResourceServer(new HTTPFacilitatorClient({ url: testnet.facilitatorUrl })), { networks: ["testnet"] });
@@ -81,22 +103,22 @@ function metalProvider(p: Provider, payTo: `0x${string}`) {
   // Every answer carries the current terms, the 402 included, so a buyer can compare before paying.
   app.use(async (c, next) => {
     await next();
-    c.res.headers.set("x-price", String(p.price));
-    c.res.headers.set("x-latency-ms", String(p.latencyMs));
+    for (const [k, v] of Object.entries(terms(p))) c.res.headers.set(k, v);
   });
-  app.post("/price", async (c) => c.json(setPrice(p, await c.req.text())));
   app.use(
     paymentMiddleware(
       // The price is read per request, so a rise applies to the very next offer.
-      { "POST /": { accepts: { scheme: "exact", network: testnet.network, payTo, price: () => String(p.price), maxTimeoutSeconds: 120 }, description: `${p.model} call` } },
+      { "POST /": { accepts: { scheme: "exact", network: testnet.network, payTo, price: () => String(priceOf(p)), maxTimeoutSeconds: 120 }, description: `${p.model} call` } },
       server,
     ),
   );
   app.post("/", async (c) => {
+    // Reached only once Metal settled the payment.
+    served(p);
     const { status, body } = await answer(p, await c.req.text());
     return c.json(body as object, status as 200);
   });
-  serve({ fetch: app.fetch, port: p.port }, () => console.log(`provider ${p.id} (${p.model}) on :${p.port} @ ${p.price} USDZ over x402 on Metal testnet, paid to ${payTo}`));
+  serve({ fetch: app.fetch, port: p.port }, () => console.log(`provider ${p.id} (${p.model}) on :${p.port} @ ${p.base} USDZ base, capacity ${p.capacity} calls / ${WINDOW_MS / 60_000} min, over x402 on Metal testnet, paid to ${payTo}`));
 }
 
 function headerProvider(p: Provider) {
@@ -106,14 +128,12 @@ function headerProvider(p: Provider) {
     const json = (status: number, body: unknown) =>
       res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
 
-    if (req.url === "/price" && req.method === "POST") return json(200, setPrice(p, raw));
-
-    res.setHeader("x-price", String(p.price));
-    res.setHeader("x-latency-ms", String(p.latencyMs));
-    if (req.headers["x-paid"] !== "1") return json(402, { provider: p.id, model: p.model, price: p.price, latencyMs: p.latencyMs });
+    for (const [k, v] of Object.entries(terms(p))) res.setHeader(k, v);
+    if (req.headers["x-paid"] !== "1") return json(402, { provider: p.id, model: p.model, price: priceOf(p), latencyMs: p.latencyMs });
+    served(p);
     const { status, body } = await answer(p, raw);
     json(status, body);
-  }).listen(p.port, () => console.log(`provider ${p.id} (${p.model}) on :${p.port} @ ${p.price} (x-paid header, no Metal)`));
+  }).listen(p.port, () => console.log(`provider ${p.id} (${p.model}) on :${p.port} @ ${p.base} base (x-paid header, no Metal)`));
 }
 
 for (const p of providers) {

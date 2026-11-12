@@ -4,11 +4,10 @@ import type { Airwallex } from "@peaje-asa/airwallex";
 import { Ledger, OrderSigner } from "@peaje-asa/ledger";
 import { FakeMetalBridge } from "@peaje-asa/metal";
 import { decideDispute, defaultPolicy as p, type DisputeFacts } from "@peaje-asa/policy";
-import { acceptAdvance, advanceDue, advanceOffer, approvalTerms, planClose, reviewDisputes, runClose, sweepFloat, textPdf, TreasuryStore, unansweredAfterEscalation, type AwxDispute, type ChatLine, type Obligation } from "./index.js";
+import { acceptAdvance, advanceDue, advanceOffer, approvalTerms, fakeRails, planClose, reviewDisputes, runClose, runMove, sweepFloat, textPdf, TreasuryStore, unansweredAfterEscalation, type AwxDispute, type ChatLine, type Obligation } from "./index.js";
 
 process.env.ORDER_SIGNING_KEY ??= OrderSigner.generateEnvValue();
 const at = "2026-11-02T00:00:00.000Z";
-const ben = { supplier: "ben_supplier", owner: "ben_owner" };
 
 /** Transfers settle as soon as they're read; disputes accept and challenge in memory. */
 function fakeAwx() {
@@ -79,17 +78,19 @@ test("approvals are bound to exact terms and used once", () => {
 test("close: nothing above the threshold moves until the owner approves those exact amounts", async () => {
   const ledger = new Ledger("USD", ":memory:");
   const store = new TreasuryStore(":memory:");
-  const awx = fakeAwx();
+  const rails = fakeRails();
   sell(ledger, "o1", 480, 330);
   sell(ledger, "o2", 480, 0);
   sell(ledger, "o3", 200, 120); // cash 1160, inventory owed 450, profit 710
   const policy = { ...p, reserveFloor: 100 };
-  const deps = { ledger, store, awx: awx as unknown as Airwallex, policy, beneficiaries: ben, day: "2026-11-02" };
+  const deps = { ledger, store, rails, policy, day: "2026-11-02", waitMs: 0 };
 
   const first = await runClose(deps);
   assert.equal(first.paid.length, 0);
+  assert.deepEqual(first.settled.map((x) => [x.kind, x.amount, x.status]), [["sale", 480, "done"], ["sale", 480, "done"], ["sale", 200, "done"]], "each sale moved to the shop's account");
+  assert.equal(first.available, 1160);
   assert.deepEqual(first.awaiting.map((a) => [a.terms.kind, a.terms.amount]), [["supplier", 450], ["owner_payout", 610]]); // 1060 above the reserve
-  assert.equal(awx.transfers.length, 0);
+  assert.equal(rails.moves.filter((m) => m.kind !== "sale").length, 0);
 
   for (const a of first.awaiting) store.decide(a.id, "approved", "owner");
   const second = await runClose(deps);
@@ -99,19 +100,42 @@ test("close: nothing above the threshold moves until the owner approves those ex
 
   const third = await runClose(deps);
   assert.equal(third.paid.length + third.awaiting.length, 0, "nothing left to pay");
+  assert.equal(rails.moves.filter((m) => m.kind === "sale").length, 3, "a sale moves once");
+  assert.equal(await rails.available(), 100);
 });
 
 test("a payout interrupted after the transfer was created is found by request_id, not paid twice", async () => {
   const ledger = new Ledger("USD", ":memory:");
   const store = new TreasuryStore(":memory:");
-  const awx = fakeAwx();
+  const rails = fakeRails();
   sell(ledger, "o1", 1000, 200);
-  const stuck = store.startPayout({ kind: "supplier", amount: 200, currency: "USD", beneficiaryId: ben.supplier, reference: "Inventory 2026-11-01" });
-  awx.transfers.push({ id: "tr_crash", request_id: stuck.requestId, status: "SENT" }); // created, then we crashed
-  const r = await runClose({ ledger, store, awx: awx as unknown as Airwallex, policy: p, beneficiaries: ben, day: "2026-11-02" });
-  assert.equal(r.resumed[0].transferId, "tr_crash");
-  assert.equal(awx.transfers.filter((t) => t.kind === "supplier" || t.reference?.startsWith("Inventory")).length, 0, "no second supplier transfer");
+  const stuck = store.startPayout({ kind: "supplier", amount: 200, currency: "USD", beneficiaryId: rails.payees.supplier, reference: "Inventory 2026-11-01" });
+  await rails.start({ kind: "supplier", requestId: stuck.requestId, amount: 200, currency: "USD", reference: stuck.reference }); // created, then we crashed
+  const r = await runClose({ ledger, store, rails, policy: p, day: "2026-11-02", waitMs: 0 });
+  assert.equal(r.resumed[0].transferId, "mv_1");
+  assert.equal(rails.moves.filter((m) => m.kind === "supplier").length, 1, "no second supplier transfer");
   assert.equal(ledger.pnl().paidToSuppliers, 200);
+});
+
+test("the platform moves each sale once and takes refunds back; the close plans on what reached the account", async () => {
+  const ledger = new Ledger("USD", ":memory:");
+  const store = new TreasuryStore(":memory:");
+  const rails = fakeRails();
+  sell(ledger, "o1", 900, 100);
+  ledger.add({ kind: "refund", orderId: "o1", amount: 50, currency: "USD", ref: "dst_1", at });
+  ledger.add({ kind: "dispute_fee", disputeId: "dst_1", amount: 15, currency: "USD", at });
+  rails.failNext = "account not fully operational";
+  const policy = { ...p, reserveFloor: 0, approvalThreshold: 10_000 };
+  const first = await runClose({ ledger, store, rails, policy, day: "2026-11-02", waitMs: 0 });
+  assert.equal(first.settled[0].status, "failed", "the sale didn't reach the account");
+  assert.equal(first.paid.length, 0, "nothing is paid out of money that hasn't arrived");
+
+  const second = await runClose({ ledger, store, rails, policy, day: "2026-11-02", waitMs: 0 });
+  assert.deepEqual(second.settled.map((x) => [x.kind, x.amount, x.status]), [["sale", 900, "done"]], "retried under a new request id");
+  assert.deepEqual(rails.moves.filter((m) => m.kind === "recovery").map((m) => m.amount), [50, 15], "refund and dispute fee taken back");
+  assert.equal(second.available, 835);
+  assert.equal(new Set(rails.moves.map((m) => m.requestId)).size, rails.moves.length);
+  assert.equal((await runClose({ ledger, store, rails, policy, day: "2026-11-03", waitMs: 0 })).settled.length, 0, "settled once");
 });
 
 test("dispute rules: small accepted, strong challenged, ignored customer escalated, rejection re-challenged", () => {
@@ -216,18 +240,19 @@ test("advance: sized from recent profit and disputes, accepted only as shown, re
   assert.equal(offer.fee, 15.6);
   assert.equal(offer.lines.length, 4);
 
+  const rails = fakeRails();
   await assert.rejects(acceptAdvance(ledger, p, 300, async () => {}), /now 260/);
   const credited: number[] = [];
-  await acceptAdvance(ledger, p, 260, async (a) => { credited.push(a); });
+  await acceptAdvance(ledger, p, 260, async (a, ref) => { credited.push(a); await runMove(rails, { kind: "advance", requestId: ref, amount: a, currency: "USD", reference: ref }, 0); });
   assert.deepEqual(credited, [260]);
   assert.equal(ledger.advances().outstanding, 275.6);
   assert.equal(advanceOffer(ledger, p).amount, 0, "no second advance while one is outstanding");
 
   order("e", 2000, 1200, new Date(Date.now() + 1000).toISOString()); // after the advance: 10% of it is due, 200
   assert.equal(advanceDue(ledger), 200);
-  const awx = fakeAwx();
-  const r = await runClose({ ledger, store, awx: awx as unknown as Airwallex, policy: { ...p, reserveFloor: 0, approvalThreshold: 10_000 }, beneficiaries: { ...ben, lender: "ben_lender" }, day: "2026-11-03" });
+  const r = await runClose({ ledger, store, rails, policy: { ...p, reserveFloor: 0, approvalThreshold: 10_000 }, day: "2026-11-03", waitMs: 0 });
   assert.deepEqual(r.paid.map((x) => x.kind), ["supplier", "advance_repayment", "owner_payout"]);
+  assert.equal(r.paid[1].beneficiaryId, "platform", "the repayment goes back to the platform that funded it");
   assert.equal(r.paid[1].amount, 200);
   assert.equal(ledger.advances().outstanding, 75.6);
   assert.equal(ledger.pnl().financingCosts, 15.6);

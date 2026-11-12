@@ -14,6 +14,7 @@
     "@peaje-asa/metal": "*",
     "@peaje-asa/policy": "*",
     "@peaje-asa/seller-agent": "*",
+    "@peaje-asa/storefront": "*",
     "@peaje-asa/treasury-agent": "*",
     "viem": "^2.57.16",
     "next": "16.4.4",

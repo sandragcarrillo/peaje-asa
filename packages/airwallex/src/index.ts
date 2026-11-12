@@ -33,6 +33,20 @@ export interface TransferInput {
   requestId?: string;
 }
 
+/** What Airwallex needs to open a shop's business account. US entities for now. */
+export interface ConnectedAccountDetails {
+  businessName: string;
+  ein: string;
+  description: string;
+  url: string;
+  email: string;
+  phone: string;
+  monthlyRevenue: number;
+  industryCode?: string;
+  address: { line1: string; city: string; state: string; postcode: string; country: string };
+  person: { firstName: string; lastName: string; dateOfBirth: string; idNumber: string };
+}
+
 /** A transfer is done when it reaches one of these. CANCELLED is how failures end (read failure_type). */
 export const TRANSFER_TERMINAL = ["PAID", "CANCELLED"] as const;
 
@@ -125,6 +139,14 @@ export class Airwallex {
     });
   }
   getPaymentLink(id: string) { return this.call("GET", `/pa/payment_links/${id}`); }
+
+  // --- Agentic Commerce (Kit 10). The merchant is the account the token belongs to.
+  agenticOnboard(body: unknown) { return this.call("POST", "/pa/agentic_commerce/onboard", body); }
+  agenticConfig() { return this.call("GET", "/pa/agentic_commerce/config"); }
+  /** Replaces only the sections sent; a section sent must carry all its values, secrets included. */
+  agenticUpdateConfig(body: unknown) { return this.call("POST", "/pa/agentic_commerce/config/update", body); }
+  /** Upserts up to 300 GMC products, matched by id. */
+  agenticUpsertProducts(products: unknown[]) { return this.call("POST", "/pa/agentic_commerce/products", { type: "gmc", gmc_products: products }); }
 
   // --- Disputes (Kit 4). REST only: the challenge tool lacks required fields.
   // A dispute carries the payment intent; merchant_order_id is the link's title, not our order id.
@@ -250,10 +272,84 @@ export class Airwallex {
     }
   }
 
+  // --- Platform: one connected account per shop (Kit 5). The platform owns the card payments;
+  // money moves to and from each shop's account with connected-account transfers and charges.
+
+  /** Opens a business account and submits it for review. Airwallex reviews it (in the sandbox, `simulate.reviewAccount`). */
+  async openConnectedAccount(details: ConnectedAccountDetails) {
+    const address = { address_line1: details.address.line1, suburb: details.address.city, state: details.address.state, postcode: details.address.postcode, country_code: details.address.country };
+    const acct: any = await this.call("POST", "/accounts/create", {
+      account_details: {
+        business_details: {
+          business_name: details.businessName, business_structure: "COMPANY", industry_category_code: details.industryCode ?? "ICCV3_1209XX",
+          registration_address: address, address, operating_country: [details.address.country],
+          business_identifiers: [{ type: "EIN", number: details.ein, country_code: details.address.country }],
+          contact_number: details.phone, url: details.url, description_of_goods_or_services: details.description,
+          account_usage: { product_reference: ["ACCEPT_ONLINE_PAYMENTS", "RECEIVE_TRANSFERS", "MAKE_TRANSFERS"], estimated_monthly_revenue: { currency: "USD", amount: String(details.monthlyRevenue) } },
+        },
+        business_person_details: [{
+          first_name: details.person.firstName, last_name: details.person.lastName, roles: ["DIRECTOR", "AUTHORISED_PERSON", "BENEFICIAL_OWNER"],
+          date_of_birth: details.person.dateOfBirth, nationality: details.address.country, residential_address: address, email: details.email, ownership_percentage: 100,
+          identifications: { primary: { identification_type: "PERSONAL_ID", issuing_country_code: details.address.country, personal_id: { number: details.person.idNumber } } },
+        }],
+      },
+      primary_contact: { email: details.email, mobile: details.phone },
+      customer_agreements: { agreed_to_data_usage: true, agreed_to_terms_and_conditions: true },
+    });
+    await this.call("POST", `/accounts/${acct.id}/submit`, {});
+    return acct.id as string;
+  }
+  getAccount(id: string) { return this.call("GET", `/accounts/${id}`); }
+  /** The account number and name another Airwallex account pays to (Airwallex Pay). */
+  walletInfo(onBehalfOf?: string) { return this.call<{ account_name: string; account_number: string }>("GET", "/account/wallet_info", undefined, onBehalfOf); }
+  balancesOf(onBehalfOf: string) { return this.call("GET", "/balances/current", undefined, onBehalfOf); }
+  globalAccountsOf(onBehalfOf: string) { return this.call("GET", "/global_accounts", undefined, onBehalfOf); }
+
+  /** Platform to shop. Settles in seconds. `request_id` makes it once-only: a repeat is refused and `findConnectedTransfer` finds the first. */
+  createConnectedTransfer(input: { destination: string; amount: number; currency: string; reason: string; reference: string; requestId: string }) {
+    return this.call("POST", "/connected_account_transfers/create", { request_id: input.requestId, amount: input.amount, currency: input.currency, destination: input.destination, reason: input.reason, reference: input.reference });
+  }
+  getConnectedTransfer(id: string) { return this.call("GET", `/connected_account_transfers/${id}`); }
+  async findConnectedTransfer(requestId: string) {
+    return ((await this.call("GET", `/connected_account_transfers?request_id=${encodeURIComponent(requestId)}`)) as any).items?.[0] as any | undefined;
+  }
+
+  /** Shop to platform (the advance repayment, a refund the platform paid for the shop). Settles in seconds. */
+  createCharge(input: { source: string; amount: number; currency: string; reason: string; reference: string; requestId: string }) {
+    return this.call("POST", "/charges/create", { request_id: input.requestId, amount: input.amount, currency: input.currency, source: input.source, reason: input.reason, reference: input.reference });
+  }
+  getCharge(id: string) { return this.call("GET", `/charges/${id}`); }
+  async findCharge(requestId: string) {
+    return ((await this.call("GET", `/charges?request_id=${encodeURIComponent(requestId)}`)) as any).items?.[0] as any | undefined;
+  }
+
+  /**
+   * Pays another Airwallex account (Airwallex Pay) from `onBehalfOf` (the shop's account), by its
+   * account number and name. Internal to Airwallex: it reaches PAID in seconds, no bank in between.
+   */
+  createWalletTransfer(input: { onBehalfOf: string; accountNumber: string; accountName: string; amount: number; currency: string; reason: string; reference: string; requestId: string }) {
+    return this.call("POST", "/transfers/create", {
+      request_id: input.requestId, transfer_amount: input.amount, transfer_currency: input.currency, source_currency: input.currency, transfer_method: "LOCAL",
+      reason: input.reason, reference: input.reference,
+      beneficiary: { type: "DIGITAL_WALLET", digital_wallet: { provider: "AIRWALLEX", id_type: "account_number", id_value: input.accountNumber, account_name: input.accountName } },
+    }, input.onBehalfOf);
+  }
+  getTransferOf(id: string, onBehalfOf: string) { return this.call("GET", `/transfers/${id}`, undefined, onBehalfOf); }
+  async findTransferOf(requestId: string, onBehalfOf: string) {
+    return ((await this.call("GET", `/transfers?request_id=${encodeURIComponent(requestId)}`, undefined, onBehalfOf)) as any).items?.[0] as any | undefined;
+  }
+
   // --- Sandbox-only simulations. Keep everything sandbox-specific here.
   simulate = {
-    deposit: (globalAccountId: string, amount: number, reference?: string, payerName = "Peaje ASA") =>
-      this.call("POST", "/simulation/deposit/create", { global_account_id: globalAccountId, amount, reference, payer_name: payerName }),
+    /** Money arriving from outside Airwallex into a global account (the shop's, with `onBehalfOf`). */
+    deposit: (globalAccountId: string, amount: number, reference?: string, payerName = "Peaje ASA", onBehalfOf?: string) =>
+      this.call("POST", "/simulation/deposit/create", { global_account_id: globalAccountId, amount, reference, payer_name: payerName }, onBehalfOf),
+    /**
+     * Airwallex's KYC review of a submitted account, which in production its compliance team does.
+     * `force: false` runs the simulated review; a forced ACTIVE leaves the account unable to move money.
+     */
+    reviewAccount: (accountId: string) =>
+      this.call("POST", `/simulation/accounts/${accountId}/update_status`, { next_status: "ACTIVE", force: false }),
     /**
      * Stage a chargeback on a paid intent (link-paid intents work). Use RFI or CHARGEBACK:
      * PRE_CHARGEBACK auto-accepts in the same second. Visa codes: 10.4 fraud, 13.1 not received, 13.6 credit not processed.

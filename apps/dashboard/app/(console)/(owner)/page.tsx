@@ -4,7 +4,7 @@ import { PageHead, Status } from "@/components/page-head";
 import { aiSpendByTier, deps, metalFloat } from "@/lib/deps";
 import { requireOwner } from "@/lib/auth";
 import { money, usd, when } from "@/lib/format";
-import { reviewDisputesAction, runCloseAction, sweepFloatAction } from "./actions";
+import { openAirwallexAccountAction, reviewDisputesAction, runCloseAction, sweepFloatAction } from "./actions";
 
 const KIND = { supplier: "Inventory", advance_repayment: "Advance repayment", owner_payout: "Profit to owner" } as const;
 
@@ -19,9 +19,11 @@ export default async function Overview() {
   const pending = treasury.approvals("pending");
   const payouts = treasury.payouts().slice(-6).reverse();
   const advances = ledger.advances();
+  const settlements = treasury.settlements();
+  const owedByPlatform = settlements.filter((x) => x.kind === "sale" && x.status !== "done").length;
 
   const stats = [
-    { valor: money(cash), texto: `Cash in Airwallex, per the books. The close never goes below the ${money(policy.reserveFloor)} reserve.` },
+    { valor: money(cash), texto: `Cash per the books (your Airwallex account once sales settle). The close never goes below the ${money(policy.reserveFloor)} reserve.` },
     { valor: money(pnl.netProfit), texto: `Net profit after inventory, refunds, dispute fees, model calls and financing.` },
     { valor: money(pnl.paidToOwner), texto: "Already paid out to you." },
     { valor: `${money(float)}`, texto: `USDZ on Metal for model calls. Above ${policy.aiFloatTarget}, it's swept back to Airwallex.` },
@@ -50,6 +52,19 @@ export default async function Overview() {
           <Link href="/approvals" className="btn btn-primario btn-chico shrink-0 self-start sm:self-center">Review approvals</Link>
         </div>
       ) : null}
+
+      {shop.airwallexAccountId && shop.payTo ? (
+        <div className="flex flex-col gap-1.5 border border-border bg-panel p-5 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <span>Airwallex account <span className="font-mono text-xs">{shop.airwallexAccountId}</span>{owedByPlatform ? <span className="text-muted"> · {owedByPlatform} sales move there at the next close</span> : null}</span>
+          <span className="text-muted">Inventory to {shop.payTo.supplier.accountName} · profit to {shop.payTo.owner.accountName}</span>
+        </div>
+      ) : (
+        <div className="space-y-3 border border-accent bg-panel p-5">
+          <p className="text-sm font-semibold">Open your shop's Airwallex account</p>
+          <p className="text-sm text-muted">The platform takes the card payments and moves each sale to your own Airwallex account. Inventory, your profit and the advance move from there. In the sandbox the KYC details are a sample and Airwallex's review is simulated; the supplier's and your payout accounts are sandbox accounts standing in for yours.</p>
+          <div className="max-w-xs"><ActionForm action={openAirwallexAccountAction} label="Open Airwallex account" pendingLabel="Opening (about 30 s)..." small /></div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((s) => (
@@ -136,7 +151,7 @@ export default async function Overview() {
                 </span>
                 <span className="flex items-center gap-4">
                   <span className="font-mono tabular-nums">{money(p.amount)}</span>
-                  <Status tone={p.status === "paid" ? "accent" : p.status === "failed" ? "alert" : "muted"}>{p.status.replace("_", " ")}</Status>
+                  <Status tone={p.status === "paid" ? "accent" : p.status === "failed" ? "alert" : "muted"}>{p.reported ? `Airwallex: ${p.reported}` : p.status.replace("_", " ")}</Status>
                 </span>
               </li>
             ))}

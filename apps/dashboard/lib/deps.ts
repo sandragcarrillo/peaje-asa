@@ -8,7 +8,7 @@ import { Ledger, OrderSigner, type SignedOrder } from "@peaje-asa/ledger";
 import { FakeMetalBridge, MandateBridge, metalReady, payerFor } from "@peaje-asa/metal";
 import type { ModelTier } from "@peaje-asa/policy";
 import { ConversationStore, SellerAgent } from "@peaje-asa/seller-agent";
-import { ProviderDisputeWriter, TreasuryStore, type CloseDeps, type DisputeDeps, ensurePayees } from "@peaje-asa/treasury-agent";
+import { airwallexRails, ProviderDisputeWriter, TreasuryStore, type CloseDeps, type DisputeDeps, type MoneyRails } from "@peaje-asa/treasury-agent";
 import { getShop, metalDirFor, policyOf } from "./shops";
 
 /** USDZ the owner put on Metal for the agents' model calls. On testnet the faucet gives more; only this much is the business's. */
@@ -54,11 +54,23 @@ export function deps(shopId: string): ShopDeps {
   return built;
 }
 
-/** Close deps with the payees; the lender only once an advance was taken. Sandbox transfers are settled by simulation. */
-export async function closeDeps(shopId: string): Promise<CloseDeps> {
-  const { ledger, treasury, awx, policy } = deps(shopId);
-  const beneficiaries = await ensurePayees(awx, ledger.advances().taken.length > 0);
-  return { ledger, store: treasury, awx, policy, beneficiaries, settle: (id) => awx.simulate.settleTransfer(id) };
+/** The shop's money rails: its Airwallex account and who it pays. Undefined until the account is open. */
+export function railsFor(shopId: string): MoneyRails | undefined {
+  const shop = getShop(shopId);
+  if (!shop?.airwallexAccountId || !shop.payTo) return undefined;
+  return airwallexRails(awx(), shop.airwallexAccountId, shop.payTo);
+}
+
+export class NoAccount extends Error {
+  constructor() { super("Open the shop's Airwallex account first (Overview > Airwallex account)."); }
+}
+
+/** The close's deps. Every move goes through the shop's account and ends when Airwallex says so. */
+export function closeDeps(shopId: string): CloseDeps {
+  const { ledger, treasury, policy } = deps(shopId);
+  const rails = railsFor(shopId);
+  if (!rails) throw new NoAccount();
+  return { ledger, store: treasury, policy, rails };
 }
 
 /** The Metal float, from the books: what the owner funded, minus model calls, minus what was already swept. */

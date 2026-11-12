@@ -7,6 +7,7 @@
     { "path": "packages/metal" },
     { "path": "packages/seller-agent" },
     { "path": "packages/treasury-agent" },
+    { "path": "packages/storefront" },
     { "path": "providers" }
   ]
 }

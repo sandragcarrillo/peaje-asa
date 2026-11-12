@@ -18,7 +18,7 @@ import { Ledger, OrderSigner, type SignedOrder } from "@peaje-asa/ledger";
 import { FakeInferencePayer, FakeMetalBridge } from "@peaje-asa/metal";
 import { defaultPolicy, findProduct, type ModelTier } from "@peaje-asa/policy";
 import { ConversationStore, SellerAgent, type Conversation } from "@peaje-asa/seller-agent";
-import { ensurePayees, ProviderDisputeWriter, reviewDisputes, runClose, sweepFloat, syncDisputeOutcomes, TreasuryStore, usdGlobalAccount, type DisputeReview } from "@peaje-asa/treasury-agent";
+import { airwallexRails, ProviderDisputeWriter, reviewDisputes, runClose, sandboxPayee, sweepFloat, syncDisputeOutcomes, TreasuryStore, type DisputeReview } from "@peaje-asa/treasury-agent";
 
 process.env.DB_PATH ??= "data/m3.db";
 const policy = defaultPolicy;
@@ -90,8 +90,13 @@ const show = (rs: DisputeReview[]) => rs.forEach((r) =>
 
 try {
   // --- 1. Sales
-  const { owner, supplier } = await ensurePayees(awx);
-  console.log(`0. Owner beneficiary ${owner}, supplier beneficiary ${supplier}`);
+  // The script's shop gets its own Airwallex account, and pays sandbox accounts standing in for its supplier and owner.
+  const payeesFile = "data/airwallex/sandbox-payees.json";
+  const shopAccount = await sandboxPayee(awx, payeesFile, "m3-shop", SHOP, "Specialty coffee sold online");
+  const supplier = await sandboxPayee(awx, payeesFile, "supplier", "Andes Green Coffee Imports", "Green coffee imports sold to roasters");
+  const owner = await sandboxPayee(awx, payeesFile, "owner:m3-shop", `${SHOP} owner`, "The shop owner's own account");
+  const rails = airwallexRails(awx, shopAccount.accountId, { supplier, owner });
+  console.log(`0. Shop account ${shopAccount.accountId}; pays ${supplier.accountName} and ${owner.accountName} by Airwallex Pay`);
 
   for (const k of CASES) {
     if (!store.get(k.id)) {
@@ -166,20 +171,21 @@ try {
   }
 
   // --- 4. Metal float back to Airwallex
-  const ga = await usdGlobalAccount(awx);
+  const ga = (((await awx.globalAccountsOf(shopAccount.accountId)) as any).items ?? []).find((g: any) => g.status === "ACTIVE")?.id;
   const bridged = ledger.all().filter((e) => e.kind === "bridge_in").reduce((s, e) => s + (e as any).amount, 0);
   const bridge = new FakeMetalBridge(Math.round((FLOAT_FUNDED - ledger.pnl().aiCosts - bridged) * 100) / 100);
-  const sweep = await sweepFloat(bridge, ledger, policy, (amount, txHash) => awx.simulate.deposit(ga, amount, txHash, "Peaje ASA Metal float"));
+  const sweep = await sweepFloat(bridge, ledger, policy, (amount, txHash) => awx.simulate.deposit(ga, amount, txHash, "Peaje ASA Metal float", shopAccount.accountId));
   console.log(`4. Float sweep: ${sweep.swept} USDZ to Airwallex${"txHash" in sweep ? ` (${sweep.txHash}, fake until M5)` : ""}, ${sweep.balance} left on Metal`);
 
   // --- 5. The close
-  const closeDeps = { ledger, store: treasury, awx, policy, beneficiaries: { supplier, owner }, settle: (id: string) => awx.simulate.settleTransfer(id) };
+  const closeDeps = { ledger, store: treasury, policy, rails };
   const first = await runClose(closeDeps);
   console.log(`5. Close on ${first.plan.cash} USD cash (reserve ${policy.reserveFloor}, approval above ${policy.approvalThreshold}):`);
   for (const o of first.plan.pay) console.log(`   pay ${o.kind} ${o.amount}`);
   for (const o of first.plan.needsApproval) console.log(`   needs approval: ${o.kind} ${o.amount} (${o.reference})`);
   for (const { obligation, why } of first.plan.defer) console.log(`   defer ${obligation.kind}: ${why}`);
-  for (const p of first.paid) console.log(`   ${p.kind} ${p.amount} -> ${p.transferId} ${p.status}`);
+  for (const s of first.settled) console.log(`   platform ${s.kind} ${s.amount} -> ${s.moveId ?? "-"} ${s.reported ?? s.status}`);
+  for (const p of first.paid) console.log(`   ${p.kind} ${p.amount} -> ${p.transferId} Airwallex: ${p.reported ?? p.status}`);
   for (const a of first.awaiting) {
     treasury.decide(a.id, "approved", "owner (m3 script)");
     console.log(`   Owner approves ${a.id}: ${a.terms.kind} ${a.terms.amount} USD to ${a.terms.counterparty}`);

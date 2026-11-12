@@ -11,7 +11,7 @@ export interface ApprovalTerms {
   kind: "supplier" | "advance_repayment" | "owner_payout" | "dispute_refund";
   amount: number;
   currency: Currency;
-  /** Beneficiary id for payouts, dispute id for refunds. */
+  /** The payee (its account number) for payouts, "platform" for the advance repayment, dispute id for refunds. */
   counterparty: string;
   reference: string;
 }
@@ -37,8 +37,31 @@ export interface Payout {
   beneficiaryId: string;
   reference: string;
   approvalId?: string;
+  /** The provider's id for the move (a transfer or a charge). */
   transferId?: string;
+  /** The status as the provider last reported it, shown to the owner as is. */
+  reported?: string;
   status: "creating" | "in_flight" | "paid" | "failed";
+  failure?: string;
+  createdAt: string;
+}
+
+/**
+ * A sale the platform owes the shop, or a refund or dispute fee the platform paid that the shop owes
+ * back. One per ledger entry; the request id is derived from it, so it can only move once.
+ */
+export interface Settlement {
+  key: string;
+  kind: "sale" | "recovery";
+  amount: number;
+  currency: Currency;
+  reference: string;
+  requestId: string;
+  /** Bumped when the provider failed the last attempt, so the next one gets a fresh request id. */
+  attempt?: number;
+  moveId?: string;
+  reported?: string;
+  status: "pending" | "done" | "failed";
   failure?: string;
   createdAt: string;
 }
@@ -54,6 +77,7 @@ export class TreasuryStore {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS approvals (id TEXT PRIMARY KEY, terms_hash TEXT NOT NULL, status TEXT NOT NULL, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS payouts (request_id TEXT PRIMARY KEY, status TEXT NOT NULL, body TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS settlements (shop_id TEXT NOT NULL, key TEXT NOT NULL, status TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (shop_id, key));
     `);
     ensureShopColumn(this.db, "approvals");
     ensureShopColumn(this.db, "payouts");
@@ -123,6 +147,21 @@ export class TreasuryStore {
 
   payouts(): Payout[] {
     return (this.db.prepare("SELECT body FROM payouts WHERE shop_id = ? ORDER BY rowid").all(this.shopId) as { body: string }[]).map((r) => JSON.parse(r.body));
+  }
+
+  // --- Settlements with the platform
+
+  settlement(key: string): Settlement | undefined {
+    const row = this.db.prepare("SELECT body FROM settlements WHERE shop_id = ? AND key = ?").get(this.shopId, key) as { body: string } | undefined;
+    return row ? JSON.parse(row.body) : undefined;
+  }
+
+  saveSettlement(s: Settlement) {
+    this.db.prepare("INSERT INTO settlements (shop_id, key, status, body) VALUES (?, ?, ?, ?) ON CONFLICT (shop_id, key) DO UPDATE SET status = excluded.status, body = excluded.body").run(this.shopId, s.key, s.status, JSON.stringify(s));
+  }
+
+  settlements(): Settlement[] {
+    return (this.db.prepare("SELECT body FROM settlements WHERE shop_id = ? ORDER BY rowid").all(this.shopId) as { body: string }[]).map((r) => JSON.parse(r.body));
   }
 
   /** Created or sent but not settled: the money is committed even though the ledger hasn't booked it. */

@@ -16,9 +16,9 @@ Peaje is our existing toolkit for making businesses discoverable by AI agents an
 |---|---|---|
 | Seller agent | Quotes and negotiates within the owner's margin floor, spends more AI only on deals worth it, escalates unprofitable conversations | Inference bought by live price on Metal (Kit 12) |
 | Trust layer | Verified card payment and a signed order per sale | Payment intents |
-| Treasury agent | Pays agent costs, keeps a reserve, pays suppliers, sends profit to the owner, asks for approval on big payments | FX, beneficiaries, transfers (Kits 1, 11) |
+| Treasury agent | Pays agent costs, keeps a reserve, pays suppliers, sends profit to the owner, asks for approval on big payments | Connected account per shop (Kit 5), Airwallex Pay transfers, charges (Kits 1, 5, 11) |
 | Disputes | Defends chargebacks with the signed order | Payment disputes (Kit 4) |
-| Agent credit | Advance offer computed from the agent's own sales data | Ledger + simulated disbursal |
+| Agent credit | Advance offer computed from the agent's own sales data | Platform-to-shop transfer, repaid with charges (Kit 5) |
 
 ## Repo layout
 
@@ -27,6 +27,7 @@ apps/dashboard        owner P&L, approvals, advance offer
 packages/policy       margins, limits, reserve, prices (rules in code)
 packages/ledger       sales, signed orders, costs, payouts, advance offer
 packages/airwallex    sandbox client, simulations isolated
+packages/treasury-agent/src/rails.ts   MoneyRails: where money moves (Airwallex is one adapter)
 packages/metal        inference payments and mandates on Metal testnet
 packages/seller-agent
 packages/treasury-agent
@@ -45,7 +46,7 @@ providers/            three mock inference providers that answer with 402
 8. Metal (optional, every agent runs on a fake payer without it): put your testnet endpoint in `METAL_RPC_URL`, then `npm run metal:setup`. It writes the platform's side only: the providers' and the bridge's addresses, and a gas sponsor funded from the faucet. Restart the providers: they now sell over x402 on Metal.
 9. Owner login for the demo shop: `npm run keys:owner -- you@example.com` (asks for a password, writes `OWNER_EMAIL`, `OWNER_PASSWORD_HASH` and `SESSION_SECRET` to `.env`). Then `npm run dev:dashboard` and open http://localhost:3001. Anyone can open another shop at `/signup`; each shop has its own book, catalog, rules and chats. A shop's customer chat is `/s/<shop>` (the demo shop: http://localhost:3001/s/tostadero-andino). Each agent bubble shows the tier that answered and what the call cost. Everything goes to `data/peaje-asa.db` (override with `DB_PATH`).
 9b. Each shop's Metal account, from its Agents page: **Create my owner key** makes the owner's key in the browser (IndexedDB) and saves a backup file. The server never holds it. The sponsor creates the account, the faucet funds it with test USDZ, and the owner's key approves one mandate per agent (seller, disputes, treasury) with the caps and budgets in the shop's rules. The browser checks every batch is for its own account and recomputes the digest before signing; the server checks the signature is the owner's before the sponsor sends it. A rebalance works the same way: the treasury plans it, the owner's key approves the replacement. The server keeps the agents' mandate keys (they only pay within their mandate) and the key that signs the mandate credentials, which binds nothing without the owner's signature.
-10. The demo: with the providers and the app running, `npm run demo -- --fresh`. Three customers chat with the real agent (a provider raises its price mid-conversation). Approve the café in Conversations, pay the printed links with the test card, then in the dashboard: Review disputes, Run close, approve, Sweep float, Advance. `--fresh` moves the old book to `data/backup-<time>/`.
+10. The demo: with the providers and the app running, `npm run demo -- --fresh`. Three customers chat with the real agent; provider prices follow demand, so the scarce premium model gets dearer as the agent uses it. Approve the café in Conversations, pay the printed links with the test card, then in the dashboard: open the shop's Airwallex account (Overview, once), Review disputes, Run close, approve, Sweep float, Advance. `--fresh` moves the old book to `data/backup-<time>/`.
 11. Treasury end to end (disputes, float sweep, close with approvals): `npm run m3`. Pay the four printed links with the test card; the script waits, then works the chargebacks, sweeps the AI float and runs the close. Its book is `data/m3.db`; rerunning resumes where it stopped.
 12. Tests (no keys needed): `npm test`
 
@@ -54,3 +55,19 @@ Sandbox only. No real money.
 ## Team
 
 Sandra Carrillo, Carla Martínez.
+
+## How money moves (Airwallex)
+
+The platform owns the card payments (hosted payment links on its account). Each shop gets its own Airwallex connected account, opened from Overview:
+
+| Move | API | Ends when Airwallex reports |
+|---|---|---|
+| Sale, platform to shop (at the close) | `connected_account_transfers` | SETTLED |
+| Refund or dispute fee, shop back to platform | `charges` | SETTLED |
+| Inventory to the supplier, profit to the owner | `transfers` to an Airwallex account (Airwallex Pay, `DIGITAL_WALLET`) | PAID |
+| Advance, platform to shop | `connected_account_transfers` | SETTLED |
+| Advance repayment, shop to platform | `charges` | SETTLED |
+
+Nothing in the app forces a status. What stays on the sandbox simulator is what someone else does in production: Airwallex's KYC review of the new account, the cardholder opening a chargeback, and the Metal-to-Airwallex deposit (the sandbox can't receive stablecoins). In the sandbox the KYC details are a sample, and the supplier's and owner's payout accounts are sandbox accounts standing in for theirs (`data/airwallex/sandbox-payees.json`).
+
+Provider prices: each provider serves a capacity of paid calls per 10 minutes at its base price; every paid call above that adds half the base, and the price falls back as calls age out (`PROVIDER_DEMAND_WINDOW_MS`). Quotes (402s) don't count.

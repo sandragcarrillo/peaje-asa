@@ -3,12 +3,13 @@
  * what needs the owner, and the transfers themselves. Amounts come from the ledger, never
  * from the wallet balance (the sandbox wallet is prefunded) and never from a model.
  */
-import type { Airwallex } from "@peaje-asa/airwallex";
+import { createHash } from "node:crypto";
 import type { Ledger } from "@peaje-asa/ledger";
 import type { MetalBridge } from "@peaje-asa/metal";
 import { needsApproval, type OwnerPolicy } from "@peaje-asa/policy";
 import { advanceDue } from "./advance.js";
-import type { ApprovalTerms, Approval, Payout, TreasuryStore } from "./store.js";
+import { runMove, type MoneyRails, type Move, type Payees } from "./rails.js";
+import type { ApprovalTerms, Approval, Payout, Settlement, TreasuryStore } from "./store.js";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const now = () => new Date().toISOString();
@@ -70,9 +71,6 @@ export function planClose(cash: number, obligations: Obligation[], policy: Owner
   return plan;
 }
 
-/** Who gets paid. The lender is only needed once an advance was taken. */
-export interface Payees { supplier: string; owner: string; lender?: string }
-
 /** What the books say is owed: inventory cost not yet paid, the advance repayment due, and profit not yet paid out or held for disputes. */
 export function obligationsFromLedger(ledger: Ledger, store: TreasuryStore, beneficiaries: Payees, day: string): Obligation[] {
   const pnl = ledger.pnl();
@@ -82,7 +80,7 @@ export function obligationsFromLedger(ledger: Ledger, store: TreasuryStore, bene
   const repayment = round2(advanceDue(ledger) - inFlight("advance_repayment"));
   return [
     { kind: "supplier", amount: Math.max(0, supplierOwed), flexible: true, beneficiaryId: beneficiaries.supplier, reference: `Inventory ${day}` },
-    ...(beneficiaries.lender && repayment > 0 ? [{ kind: "advance_repayment" as const, amount: repayment, beneficiaryId: beneficiaries.lender, reference: `Advance repayment ${day}` }] : []),
+    ...(repayment > 0 ? [{ kind: "advance_repayment" as const, amount: repayment, beneficiaryId: beneficiaries.lender, reference: `Advance repayment ${day}` }] : []),
     { kind: "owner_payout", amount: Math.max(0, ownerOwed), flexible: true, beneficiaryId: beneficiaries.owner, reference: `Profit ${day}` },
   ];
 }
@@ -90,28 +88,26 @@ export function obligationsFromLedger(ledger: Ledger, store: TreasuryStore, bene
 export const approvalTerms = (o: Obligation, policy: OwnerPolicy): ApprovalTerms =>
   ({ kind: o.kind, amount: o.amount, currency: policy.currency, counterparty: o.beneficiaryId, reference: o.reference });
 
-/** The sandbox accepts any reason string; production validates it, so recheck these before going live. */
-const TRANSFER_REASON: Record<Payout["kind"], string> = { supplier: "payment_to_supplier", advance_repayment: "loan_repayment", owner_payout: "personal_remittance" };
 const LEDGER_KIND = { supplier: "supplier_payment", advance_repayment: "advance_repayment", owner_payout: "owner_payout" } as const;
 const LABEL = { supplier: "Inventory payment", advance_repayment: "Advance repayment", owner_payout: "Profit payout" } as const;
 
 export interface CloseDeps {
   ledger: Ledger;
   store: TreasuryStore;
-  awx: Airwallex;
   policy: OwnerPolicy;
-  beneficiaries: Payees;
-  /**
-   * Moves a created transfer to its end state. Sandbox transfers don't settle on their own, so the
-   * script passes `awx.simulate.settleTransfer`; without it the close waits briefly and resumes next time.
-   */
-  settle?: (transferId: string) => Promise<any>;
+  /** The shop's account and its payees. Nothing here forces a status: a move is done when the provider says so. */
+  rails: MoneyRails;
   /** Day the close is for (YYYY-MM-DD). Part of each payment's reference, so it's part of what's approved. */
   day?: string;
+  /** How long to wait for a move to finish before leaving it for the next close. */
+  waitMs?: number;
 }
 
 export interface CloseResult {
   plan: ClosePlan;
+  /** What the shop's account could spend when the close planned. */
+  available: number;
+  settled: Settlement[];
   paid: Payout[];
   awaiting: Approval[];
   resumed: Payout[];
@@ -119,10 +115,14 @@ export interface CloseResult {
 
 export async function runClose(deps: CloseDeps): Promise<CloseResult> {
   const { ledger, store, policy } = deps;
+  const settled = await settleWithPlatform(deps);
   const resumed = await resumePayouts(deps);
   const day = deps.day ?? now().slice(0, 10);
   const committed = store.inFlight().reduce((s, p) => s + p.amount, 0);
-  const plan = planClose(round2(ledger.cash() - committed), obligationsFromLedger(ledger, store, deps.beneficiaries, day), policy);
+  // The books say what the shop has; the account says what has arrived. Plan on the smaller one.
+  const available = round2(await deps.rails.available(policy.currency));
+  const cash = round2(Math.min(ledger.cash() - committed, available));
+  const plan = planClose(cash, obligationsFromLedger(ledger, store, deps.rails.payees, day), policy);
 
   const paid: Payout[] = [];
   const awaiting: Approval[] = [];
@@ -133,8 +133,49 @@ export async function runClose(deps: CloseDeps): Promise<CloseResult> {
     else awaiting.push(store.requestApproval(terms, `${LABEL[o.kind]} of ${o.amount} ${policy.currency} is above the ${policy.approvalThreshold} approval threshold.`));
   }
   for (const o of plan.pay) paid.push(await pay(deps, o));
-  return { plan, paid, awaiting, resumed };
+  return { plan, available, settled, paid, awaiting, resumed };
 }
+
+/** Request ids are platform-wide, so the shop is part of the key. Same entry, same id, never two moves. */
+const settlementRequestId = (shopId: string, key: string, attempt: number) => `st_${createHash("sha256").update(`${shopId}|${key}|${attempt}`).digest("hex").slice(0, 40)}`;
+
+/**
+ * The platform owns the card payments: it moves each sale to the shop's account, and takes back each
+ * refund and dispute fee it paid for the shop. One move per ledger entry. A create that was refused or
+ * cut off is retried with the same request id at the next close; one the provider failed, with a new one.
+ */
+export async function settleWithPlatform(deps: CloseDeps): Promise<Settlement[]> {
+  const { ledger, store, policy, rails } = deps;
+  const due: Pick<Settlement, "key" | "kind" | "amount" | "reference">[] = [];
+  for (const e of ledger.all()) {
+    if (e.kind === "sale") due.push({ key: `sale:${e.orderId}`, kind: "sale", amount: e.amount, reference: `Sale ${e.orderId}` });
+    if (e.kind === "refund") due.push({ key: `refund:${e.ref ?? e.orderId}`, kind: "recovery", amount: e.amount, reference: `Refund ${e.orderId}` });
+    if (e.kind === "dispute_fee") due.push({ key: `fee:${e.disputeId}`, kind: "recovery", amount: e.amount, reference: `Dispute fee ${e.disputeId}` });
+  }
+  const out: Settlement[] = [];
+  for (const d of due) {
+    let s = store.settlement(d.key);
+    if (s?.status === "done") continue;
+    s ??= { ...d, currency: policy.currency, attempt: 0, requestId: settlementRequestId(store.shopId, d.key, 0), status: "pending", createdAt: now() };
+    // The provider ended the last attempt as failed: that request id is spent, try a new one.
+    if (s.status === "failed") Object.assign(s, { attempt: (s.attempt ?? 0) + 1, status: "pending", moveId: undefined, reported: undefined });
+    s.requestId = settlementRequestId(store.shopId, d.key, s.attempt ?? 0);
+    store.saveSettlement(s);
+    const m: Move = { kind: s.kind, requestId: s.requestId, amount: s.amount, currency: s.currency, reference: s.reference.slice(0, 50) };
+    try {
+      const r = await runMove(rails, m, deps.waitMs);
+      Object.assign(s, { moveId: r.id, reported: r.reported, status: r.state, failure: r.failure });
+    } catch (e) {
+      // Refused or unreachable: stays pending, and the next close retries the same request id.
+      s.failure = e instanceof Error ? e.message : String(e);
+    }
+    store.saveSettlement(s);
+    out.push(s);
+  }
+  return out;
+}
+
+const moveOf = (p: Payout): Move => ({ kind: p.kind, requestId: p.requestId, amount: p.amount, currency: p.currency, reference: p.reference });
 
 async function pay(deps: CloseDeps, o: Obligation, approvalId?: string): Promise<Payout> {
   const p = deps.store.startPayout({ kind: o.kind, amount: o.amount, currency: deps.policy.currency, beneficiaryId: o.beneficiaryId, reference: o.reference, approvalId });
@@ -143,14 +184,13 @@ async function pay(deps: CloseDeps, o: Obligation, approvalId?: string): Promise
 
 async function createAndFinish(deps: CloseDeps, p: Payout): Promise<Payout> {
   try {
-    const t: any = await deps.awx.createTransferOnce({
-      beneficiaryId: p.beneficiaryId, amount: p.amount, currency: p.currency, reference: p.reference, reason: TRANSFER_REASON[p.kind], requestId: p.requestId,
-    });
-    p.transferId = t.id;
+    const s = await deps.rails.start(moveOf(p));
+    p.transferId = s.id;
+    p.reported = s.reported;
     p.status = "in_flight";
     deps.store.savePayout(p);
   } catch (e: any) {
-    // A 4xx means Airwallex refused it; anything else may have gone through, so it stays "creating" and is looked up next close.
+    // A 4xx means the provider refused it; anything else may have gone through, so it stays "creating" and is looked up next close.
     if (e?.status >= 400 && e?.status < 500 && e?.status !== 429) {
       p.status = "failed";
       p.failure = e.message;
@@ -162,18 +202,21 @@ async function createAndFinish(deps: CloseDeps, p: Payout): Promise<Payout> {
   return finish(deps, p);
 }
 
-/** Book the payout in the ledger only once Airwallex says PAID. */
+/** Book the payout in the ledger only once the provider says it's done. Still pending: the next close looks again. */
 async function finish(deps: CloseDeps, p: Payout): Promise<Payout> {
-  let t: any = await deps.awx.getTransfer(p.transferId!);
-  if (t.status !== "PAID" && t.status !== "CANCELLED" && t.status !== "FAILED") {
-    t = deps.settle ? await deps.settle(p.transferId!) : await deps.awx.waitForTransfer(p.transferId!, 10_000);
+  const deadline = Date.now() + (deps.waitMs ?? 15_000);
+  let s = await deps.rails.check(moveOf(p), p.transferId!);
+  while (s.state === "pending" && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1000));
+    s = await deps.rails.check(moveOf(p), p.transferId!);
   }
-  if (t.status === "PAID") {
+  p.reported = s.reported;
+  if (s.state === "done") {
     deps.ledger.add({ kind: LEDGER_KIND[p.kind], ref: p.transferId!, amount: p.amount, currency: p.currency, at: now() });
     p.status = "paid";
-  } else if (t.status === "CANCELLED" || t.status === "FAILED") {
+  } else if (s.state === "failed") {
     p.status = "failed";
-    p.failure = [t.failure_type, t.failure_reason].filter(Boolean).join(": ") || t.status;
+    p.failure = s.failure;
   }
   deps.store.savePayout(p);
   return p;
@@ -184,9 +227,10 @@ async function resumePayouts(deps: CloseDeps): Promise<Payout[]> {
   const out: Payout[] = [];
   for (const p of deps.store.inFlight()) {
     if (p.status === "creating") {
-      const existing: any = await deps.awx.findTransferByRequestId(p.requestId);
+      const existing = await deps.rails.find(moveOf(p));
       if (!existing) { out.push(await createAndFinish(deps, p)); continue; }
       p.transferId = existing.id;
+      p.reported = existing.reported;
       p.status = "in_flight";
       deps.store.savePayout(p);
     }

@@ -5,13 +5,14 @@
  *   npm run demo             continue where the last run stopped (chats already played are skipped)
  *   npm run demo -- --fresh  move the current book to data/backup-<time>/ and start over
  *
- * 1. Three customers write. One asks about an espresso machine and the premium provider raises its price
- *    mid-conversation: the agent moves to a cheaper model and still closes at a price it may offer.
+ * 1. Three customers write. The providers price by demand: as the agent's own calls pile up, the scarce
+ *    premium model gets dearer and the agent moves to a cheaper one, still closing at a price it may offer.
  *    One buys beans. One wants two machines below what the agent may offer: it asks the owner.
  * 2. You: approve the café's price in the dashboard (Conversations), then pay the links with the test card.
  * 3. Paid orders ship. Two chargebacks are staged: a small one and a fraud claim on the negotiated sale.
- * 4. On Metal, every provider raises its price (supplier costs rise) and stays there: the seller's budget buys fewer calls.
- * 5. You, in the dashboard: Agents > Rebalance, Review disputes, Run close, approve what's above the threshold, Sweep float, Advance.
+ * 4. The providers' prices as demand left them: what Agents > Rebalance reads.
+ * 5. You, in the dashboard: open the shop's Airwallex account (Overview), Agents > Rebalance, Review disputes,
+ *    Run close (sales move to the shop's account, payouts leave it), approve what's above the threshold, Sweep float, Advance.
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, renameSync } from "node:fs";
@@ -36,7 +37,6 @@ const { Ledger, OrderSigner } = await import("@peaje-asa/ledger");
 const { metalReady, payerFor } = await import("@peaje-asa/metal");
 const { defaultPolicy } = await import("@peaje-asa/policy");
 const { ConversationStore, SellerAgent } = await import("@peaje-asa/seller-agent");
-const { ensurePayees } = await import("@peaje-asa/treasury-agent");
 
 const policy = defaultPolicy;
 const awx = Airwallex.fromEnv();
@@ -52,11 +52,11 @@ const tiers: Record<ModelTier, { id: string; url: string }> = {
   mid: { id: "mid", url: process.env.PROVIDER_MID_URL ?? "http://localhost:4102" },
   premium: { id: "premium", url: process.env.PROVIDER_PREMIUM_URL ?? "http://localhost:4103" },
 };
-const BASE_PRICE: Record<ModelTier, number> = { cheap: 0.01, mid: 0.02, premium: 0.05 };
-/** After the chats: the cheapest call costs 6x, so the seller's 100-call runway needs 6 USDZ left. */
-const MARKET_RISE: Record<ModelTier, number> = { cheap: 0.06, mid: 0.07, premium: 0.09 };
-const setPrice = (t: ModelTier, price: number) =>
-  fetch(`${tiers[t].url}/price`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ price }) });
+/** A provider's terms right now, from the headers on its 402. Reading them isn't a paid call, so it doesn't move the price. */
+const terms = async (t: ModelTier) => {
+  const r = await fetch(tiers[t].url, { method: "POST" });
+  return { price: Number(r.headers.get("x-price")), demand: Number(r.headers.get("x-demand")), capacity: Number(r.headers.get("x-capacity")) };
+};
 
 let providers: ChildProcess | undefined;
 const up = () => fetch(tiers.cheap.url, { method: "POST" }).then(() => true, () => false);
@@ -71,8 +71,7 @@ const METAL = join(process.cwd(), "data/shops/tostadero-andino/metal");
 console.log(metalReady(METAL) ? `Paying models on Metal testnet under the agents' mandates (${METAL}).` : "The demo shop has no Metal mandates yet (Agents page in the dashboard): model calls use the fake payer.");
 const seller = new SellerAgent({ policy, ledger, store, payer: payerFor("seller", METAL), providers: tiers, awx, signer: OrderSigner.fromEnv(), shopName: SHOP });
 
-/** A scripted customer turn, or a moment between turns (a provider changing its price). */
-type Step = string | { price: Partial<Record<ModelTier, number>>; say: string };
+type Step = string;
 interface Customer {
   id: string;
   steps: Step[];
@@ -86,7 +85,6 @@ const CUSTOMERS: Customer[] = [
     id: "demo-espresso",
     steps: [
       "Hi! Can you give me a quote for one home espresso machine?",
-      { price: { premium: 1 }, say: "The premium provider raises its price from 0.05 to 1.00 per call." },
       "Is it a good machine for someone who is just starting with espresso?",
       "Could you do 440? I'd buy it today.",
       "Great, send me the payment link.",
@@ -119,23 +117,15 @@ const show = (who: string, lines: { from: string; text: string; tier?: string; c
 };
 
 try {
-  await ensurePayees(awx);
-
   // --- 1. The chats. A customer whose chat already has messages isn't replayed.
   for (const k of CUSTOMERS) {
     if (store.get(k.id)?.transcript.length) continue;
     console.log(`\n1. ${k.id}`);
     for (const step of k.steps) {
-      if (typeof step !== "string") {
-        console.log(`   >> ${step.say}`);
-        for (const [t, p] of Object.entries(step.price)) await setPrice(t as ModelTier, p);
-        continue;
-      }
       console.log(`   customer: ${step}`);
       show(k.id, await seller.handleMessage(k.id, step));
       if (store.get(k.id)!.status === "escalated") break;
     }
-    for (const [t, p] of Object.entries(BASE_PRICE)) await setPrice(t as ModelTier, p);
   }
 
   // --- 2. The owner and the payments
@@ -177,13 +167,15 @@ try {
     }
   }
 
-  // --- 4. Supplier costs rise (Kit 11). Left in place so Agents > Rebalance sees them; restart the providers to reset.
-  if (metalReady(METAL)) {
-    for (const [t, p] of Object.entries(MARKET_RISE)) await setPrice(t as ModelTier, p);
-    console.log(`\n4. Every provider raised its price: ${Object.entries(MARKET_RISE).map(([t, p]) => `${t} ${p}`).join(", ")} USDZ per call. The seller's budget now buys fewer calls.`);
+  // --- 4. Supplier costs (Kit 11): whatever demand left them at. Agents > Rebalance reads the same offers.
+  const now4: string[] = [];
+  for (const t of Object.keys(tiers) as ModelTier[]) {
+    const x = await terms(t);
+    now4.push(`${t} ${x.price} (${x.demand} paid calls, capacity ${x.capacity})`);
   }
+  console.log(`\n4. Provider prices now, set by demand in the last 10 minutes: ${now4.join(", ")} USDZ per call.`);
 
-  console.log(`\n5. In ${DASHBOARD}: ${metalReady(METAL) ? "Agents > Rebalance, then " : ""}Review disputes, Run close (approve what's above ${policy.approvalThreshold} USD), Sweep float, then Advance.`);
+  console.log(`\n5. In ${DASHBOARD}: open the Airwallex account on Overview if it isn't, ${metalReady(METAL) ? "Agents > Rebalance, then " : ""}Review disputes, Run close (approve what's above ${policy.approvalThreshold} USD), Sweep float, then Advance.`);
   console.log(`   Cash ${ledger.cash()} USD.`, ledger.pnl());
 } finally {
   providers?.kill();
