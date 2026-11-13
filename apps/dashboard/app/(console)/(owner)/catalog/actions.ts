@@ -9,6 +9,7 @@ import type { Product } from "@peaje-asa/policy";
 import type { ActionResult } from "@/components/action-form";
 import { requireOwner } from "@/lib/auth";
 import { policyOf, shops } from "@/lib/shops";
+import { syncCatalog } from "@/lib/storefront";
 
 const MAX_PRODUCTS = 200;
 const num = (form: FormData, k: string) => Number(String(form.get(k) ?? "").replace(",", "."));
@@ -28,6 +29,7 @@ async function edit(fn: (catalog: Product[], shopId: string) => ActionResult | P
   const out = fn([...policy.catalog], shop.id);
   if (!Array.isArray(out)) return out;
   shops().update(shop.id, { policy: { ...policy, catalog: out } });
+  syncCatalog(shop.id);
   revalidatePath("/", "layout");
   return null;
 }
@@ -75,6 +77,7 @@ export async function updateRulesAction(_prev: ActionResult, form: FormData): Pr
   if (!(approvalThreshold > 0)) return { ok: false, message: "Payments above some amount must wait for you: set it above 0." };
   if (!(reserveFloor >= 0)) return { ok: false, message: "The reserve can't be negative." };
   shops().update(shop.id, { about, policy: { ...policy, marginFloor, maxAutoDiscount, approvalThreshold, reserveFloor } });
+  syncCatalog(shop.id);
   revalidatePath("/", "layout");
   return { ok: true, message: "Saved. The agents follow the new rules from their next step." };
 }

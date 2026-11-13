@@ -34,15 +34,18 @@ export interface GmcProduct {
   availability: "in_stock" | "out_of_stock"; price: string; brand: string; product_type: string; condition: "new";
 }
 
-/** One GMC row per product on sale. Images and links are served by this app at `baseUrl`. */
+/**
+ * One GMC row per product, served by this app at `baseUrl`. Archived products stay in the feed as
+ * out of stock: an upsert leaves products it doesn't name unchanged, so dropping one would keep it on sale.
+ */
 export function feedFor(shop: ShopListing, baseUrl: string): GmcProduct[] {
-  return shop.policy.catalog.filter((p) => !p.archived).map((p) => ({
+  return shop.policy.catalog.map((p) => ({
     id: itemId(shop.id, p.sku),
     title: p.name,
     description: `${p.name} from ${shop.name}${shop.about ? `, ${shop.about}` : ""}.`,
     link: `${baseUrl}/s/${shop.id}?sku=${encodeURIComponent(p.sku)}`,
     image_link: `${baseUrl}/api/s/${shop.id}/img/${encodeURIComponent(p.sku)}`,
-    availability: "in_stock",
+    availability: p.archived ? "out_of_stock" : "in_stock",
     price: `${p.listPrice.toFixed(2)} ${shop.policy.currency}`,
     brand: shop.name,
     product_type: p.category,

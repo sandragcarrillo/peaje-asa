@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { defaultPolicy, sampleCatalog } from "@peaje-asa/policy";
 import { signUp, type LoginResult } from "@/lib/auth";
 import { shops } from "@/lib/shops";
+import { syncCatalog } from "@/lib/storefront";
 
 export type SignupState = (LoginResult & { values?: Record<string, string> }) | null;
 
@@ -25,5 +26,7 @@ export async function signUpAction(_prev: SignupState, form: FormData): Promise<
     },
   });
   if (result) return { ...result, values };
+  const created = shops().byEmail(values.email.toLowerCase());
+  if (created) syncCatalog(created.id);
   redirect(sample ? "/" : "/catalog");
 }

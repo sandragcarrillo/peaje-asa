@@ -4,8 +4,10 @@
  */
 import "./env";
 import { join } from "node:path";
+import { after } from "next/server";
+import { Airwallex } from "@peaje-asa/airwallex";
 import { Ledger, OrderSigner } from "@peaje-asa/ledger";
-import { CheckoutStore, OAuthKey, OAuthServer, type BookDeps, type ShopListing } from "@peaje-asa/storefront";
+import { CheckoutStore, OAuthKey, OAuthServer, feedFor, type BookDeps, type ShopListing } from "@peaje-asa/storefront";
 import { root } from "./env";
 import { getShop, policyOf, shops } from "./shops";
 
@@ -41,4 +43,25 @@ export function bookDeps(): BookDeps {
     ledgerFor: (id) => new Ledger(listing(id)!.policy.currency, undefined, id),
     signer: (g.asaSigner ??= OrderSigner.fromEnv()),
   };
+}
+
+const awx = () => ((globalThis as unknown as { asaAwx?: Airwallex }).asaAwx ??= Airwallex.fromEnv());
+
+/**
+ * Pushes the shop's products into the platform's Kit 10 catalogue after the response is sent, so
+ * buyer agents see a new shop or an edited catalogue. Only on a public https origin with Kit 10
+ * set up (`npm run kit10 -- setup`); a failure is logged and the next edit pushes again.
+ */
+export function syncCatalog(shopId: string) {
+  if (!process.env.PUBLIC_URL?.startsWith("https://") || !process.env.AGENTIC_CHECKOUT_SECRET) return;
+  after(async () => {
+    const s = listing(shopId);
+    if (!s || s.policy.catalog.length === 0) return;
+    try {
+      const r: any = await awx().agenticUpsertProducts(feedFor(s, publicUrl()));
+      if (r.records_failed) console.warn(`kit10 sync ${shopId}: ${r.records_failed} product(s) failed`);
+    } catch (e) {
+      console.warn(`kit10 sync ${shopId}: ${e instanceof Error ? e.message.slice(0, 300) : String(e)}`);
+    }
+  });
 }

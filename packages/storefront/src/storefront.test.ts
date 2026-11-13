@@ -19,7 +19,7 @@ test("item ids carry the shop and the sku", () => {
 
 test("the feed lists every product on sale in GMC form", () => {
   const feed = feedFor(shop, base);
-  assert.equal(feed.length, defaultPolicy.catalog.filter((p) => !p.archived).length);
+  assert.equal(feed.length, defaultPolicy.catalog.length);
   const huila = feed.find((p) => p.id === "tostadero-andino__BEAN-HUILA-250")!;
   assert.equal(huila.price, "14.00 USD");
   assert.equal(huila.availability, "in_stock");
