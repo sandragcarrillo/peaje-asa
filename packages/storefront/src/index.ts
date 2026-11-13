@@ -233,3 +233,42 @@ export function bookCheckoutPayment(intent: any, d: BookDeps): BookResult {
   d.checkouts.save({ ...r, paymentIntentId: intent.id, orderId });
   return { booked: true, shopId: r.shopId, orderId, total: want };
 }
+
+/** A buyer agent's payment in USDZ on Metal for one item, already settled and verified against its mandate. */
+export interface MandateSale {
+  shopId: string;
+  sku: string;
+  /** The settlement transaction on Metal. */
+  tx: string;
+  /** The buyer agent's account, which paid. */
+  payer: string;
+  /** What settled, in USDZ major units (= USD). */
+  amount: number;
+}
+
+/** The order a Metal settlement books as: one per transaction. */
+export const mandateOrderId = (tx: string) => `ord_metal_${tx.slice(2, 18).toLowerCase()}`;
+
+/**
+ * Books one item paid by a buyer agent under its Metal mandate: a signed order and a sale at list
+ * price in the shop that sold it. The caller has settled the payment and verified it on chain; this
+ * checks only that what settled is what the item costs. Same transaction twice books once.
+ */
+export function bookMandateSale(s: MandateSale, d: Omit<BookDeps, "checkouts">): BookResult {
+  const shop = d.shopOf(s.shopId);
+  const p = shop && findProduct(shop.policy.catalog, s.sku);
+  if (!shop || !p) return { booked: false, reason: `no product ${s.sku} in ${s.shopId}` };
+  if (Math.abs(s.amount - p.listPrice) > 0.001) return { booked: false, reason: `paid ${s.amount}, the item costs ${p.listPrice}`, shopId: shop.id };
+  const orderId = mandateOrderId(s.tx);
+  const ledger = d.ledgerFor(shop.id);
+  if (ledger.order(orderId)) return { booked: false, reason: "already booked", shopId: shop.id, orderId };
+  const at = new Date().toISOString();
+  const order = d.signer.sign({
+    orderId, customerRef: `metal:${s.payer}`,
+    items: [{ sku: p.sku, qty: 1, unitPrice: p.listPrice }],
+    total: p.listPrice, currency: shop.policy.currency, paymentIntentId: `metal:${s.tx}`, createdAt: at,
+  });
+  ledger.addOrder(order);
+  ledger.add({ kind: "sale", orderId, amount: p.listPrice, cogs: p.unitCost ?? 0, currency: shop.policy.currency, at });
+  return { booked: true, shopId: shop.id, orderId, total: p.listPrice };
+}

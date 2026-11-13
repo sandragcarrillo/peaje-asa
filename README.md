@@ -52,6 +52,8 @@ providers/            three mock inference providers that answer with 402
 
 Buyer agents (Kit 10): every shop's products go into the platform's Airwallex Agentic Commerce catalogue, and a buyer's Claude shops them through the platform's merchant MCP. Airwallex calls `/api/agentic/checkout` (HMAC-signed) and the buyer signs in through the app's OAuth server, so both need a public https origin in `PUBLIC_URL`. Then `npm run kit10 -- setup` and `npm run kit10 -- products`.
 
+Buyer agents on Metal: `POST /api/s/<shop>/metal/<sku>` sells one item over x402 in USDZ. Its 402 asks for the agent's signed order, the payment is checked against the agent's mandate before Metal settles it, the settlement is verified on chain (`verifyMandatePayment`) and only then is the sale booked. To try it: `npm run metal:buyer -- setup <item url>` (an account, test USDZ, a mandate capped at 50 USDZ a payment) and `npm run metal:buyer -- buy <item url>`. Above the cap, Metal refuses and nothing moves.
+
 Sandbox only. No real money.
 
 ## Team

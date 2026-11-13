@@ -9,6 +9,7 @@
     "start": "next start -p ${PORT:-3001}"
   },
   "dependencies": {
+    "@metalntwx/metal-pay": "0.3.4",
     "@peaje-asa/airwallex": "*",
     "@peaje-asa/ledger": "*",
     "@peaje-asa/metal": "*",
@@ -16,10 +17,11 @@
     "@peaje-asa/seller-agent": "*",
     "@peaje-asa/storefront": "*",
     "@peaje-asa/treasury-agent": "*",
-    "viem": "^2.57.16",
+    "@x402/core": "^2.29.0",
     "next": "16.4.4",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "viem": "^2.57.16"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.4",

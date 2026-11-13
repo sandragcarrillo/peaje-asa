@@ -133,3 +133,19 @@ test("a succeeded intent books the quoted checkout once, in the shop that sold i
   assert.match((bookCheckoutPayment({ ...intent, id: "int_2" }, deps) as any).reason, /already paid by int_1/);
   assert.equal(ledger.all().filter((e) => e.kind === "sale").length, 1);
 });
+
+test("a Metal payment books one item at list price, once per transaction", async () => {
+  const { Ledger, OrderSigner, verifyOrder } = await import("@peaje-asa/ledger");
+  const { bookMandateSale, mandateOrderId } = await import("./index.js");
+  process.env.ORDER_SIGNING_KEY = OrderSigner.generateEnvValue();
+  const ledger = new Ledger("USD", ":memory:", "tostadero-andino");
+  const deps = { shopOf: shops, signer: OrderSigner.fromEnv(), ledgerFor: () => ledger };
+  const tx = `0x${"ab".repeat(32)}`;
+  const sale = { shopId: "tostadero-andino", sku: "BEAN-HUILA-250", tx, payer: "0xbuyer", amount: 14 };
+  assert.match((bookMandateSale({ ...sale, amount: 1 }, deps) as any).reason, /costs 14/);
+  assert.match((bookMandateSale({ ...sale, sku: "NOPE" }, deps) as any).reason, /no product/);
+  assert.deepEqual(bookMandateSale(sale, deps), { booked: true, shopId: "tostadero-andino", orderId: mandateOrderId(tx), total: 14 });
+  assert.ok(verifyOrder(ledger.order(mandateOrderId(tx))!));
+  assert.equal((bookMandateSale(sale, deps) as any).reason, "already booked");
+  assert.equal(ledger.all().filter((e) => e.kind === "sale").length, 1);
+});
