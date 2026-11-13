@@ -21,6 +21,33 @@ export default async function Catalog() {
         sub="What the agent may sell and how far it may go. Prices, costs and limits live here, in code the agent can't talk its way around, never in its prompt."
       />
 
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="space-y-3 border border-border bg-panel p-5">
+          <h2 className="font-semibold">Add a product</h2>
+          <ActionForm action={addProductAction} label="Put it on sale" pendingLabel="Saving...">
+            <label className="block text-sm">Name<input name="name" required maxLength={80} className={input} /></label>
+            <label className="block text-sm">Category<input name="category" maxLength={40} placeholder="beans, machines..." className={input} /></label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block text-sm">Price (USD)<input name="listPrice" required inputMode="decimal" className={input} /></label>
+              <label className="block text-sm">What it costs you<input name="unitCost" required inputMode="decimal" className={input} /></label>
+            </div>
+          </ActionForm>
+        </div>
+
+        <div className="space-y-3 border border-border bg-panel p-5">
+          <h2 className="font-semibold">Rules</h2>
+          <ActionForm action={updateRulesAction} label="Save rules" pendingLabel="Saving...">
+            <label className="block text-sm">What you sell and where<input name="about" required maxLength={200} defaultValue={shop.about} className={input} /></label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block text-sm">Lowest margin (%)<input name="marginFloor" required inputMode="decimal" defaultValue={pct(policy.marginFloor)} className={input} /></label>
+              <label className="block text-sm">Discount it gives alone (%)<input name="maxAutoDiscount" required inputMode="decimal" defaultValue={pct(policy.maxAutoDiscount)} className={input} /></label>
+              <label className="block text-sm">You approve payments above (USD)<input name="approvalThreshold" required inputMode="decimal" defaultValue={policy.approvalThreshold} className={input} /></label>
+              <label className="block text-sm">Cash always kept (USD)<input name="reserveFloor" required inputMode="decimal" defaultValue={policy.reserveFloor} className={input} /></label>
+            </div>
+          </ActionForm>
+        </div>
+      </div>
+
       <div className="space-y-3">
         <h2 className="font-semibold">On sale</h2>
         {onSale.length ? (
@@ -55,35 +82,8 @@ export default async function Catalog() {
             </table>
           </div>
         ) : (
-          <Empty>Nothing on sale yet. Add your first product below; the agent can quote it from the next message.</Empty>
+          <Empty>Nothing on sale yet. Add your first product above; the agent can quote it from the next message.</Empty>
         )}
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="space-y-3 border border-border bg-panel p-5">
-          <h2 className="font-semibold">Add a product</h2>
-          <ActionForm action={addProductAction} label="Put it on sale" pendingLabel="Saving...">
-            <label className="block text-sm">Name<input name="name" required maxLength={80} className={input} /></label>
-            <label className="block text-sm">Category<input name="category" maxLength={40} placeholder="beans, machines..." className={input} /></label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block text-sm">Price (USD)<input name="listPrice" required inputMode="decimal" className={input} /></label>
-              <label className="block text-sm">What it costs you<input name="unitCost" required inputMode="decimal" className={input} /></label>
-            </div>
-          </ActionForm>
-        </div>
-
-        <div className="space-y-3 border border-border bg-panel p-5">
-          <h2 className="font-semibold">Rules</h2>
-          <ActionForm action={updateRulesAction} label="Save rules" pendingLabel="Saving...">
-            <label className="block text-sm">What you sell and where<input name="about" required maxLength={200} defaultValue={shop.about} className={input} /></label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block text-sm">Lowest margin (%)<input name="marginFloor" required inputMode="decimal" defaultValue={pct(policy.marginFloor)} className={input} /></label>
-              <label className="block text-sm">Discount it gives alone (%)<input name="maxAutoDiscount" required inputMode="decimal" defaultValue={pct(policy.maxAutoDiscount)} className={input} /></label>
-              <label className="block text-sm">You approve payments above (USD)<input name="approvalThreshold" required inputMode="decimal" defaultValue={policy.approvalThreshold} className={input} /></label>
-              <label className="block text-sm">Cash always kept (USD)<input name="reserveFloor" required inputMode="decimal" defaultValue={policy.reserveFloor} className={input} /></label>
-            </div>
-          </ActionForm>
-        </div>
       </div>
     </section>
   );
