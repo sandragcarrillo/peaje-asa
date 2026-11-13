@@ -2,12 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-interface Line { from: "customer" | "agent" | "owner" | "system"; text: string; at: string; tier?: "cheap" | "mid" | "premium"; cost?: number }
-interface View { id: string; status: string; transcript: Line[]; aiSpent: number; calls: number; error?: string }
-
-function newId() {
-  return `c-${crypto.randomUUID().slice(0, 8)}`;
-}
+interface Line { from: "customer" | "agent" | "owner" | "system"; text: string; at: string }
+interface View { id: string; status: string; transcript: Line[]; error?: string }
 
 function time(at: string) {
   return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -24,7 +20,7 @@ function Linkified({ text }: { text: string }) {
   );
 }
 
-/** The customer side of a shop: a chat with its seller agent. The conversation id lives in the URL (?c=). */
+/** The customer side of a shop: a chat with its seller agent. The server makes the conversation id on the first message; it then lives in the URL (?c=). */
 export function ShopChat({ shop }: { shop: { id: string; name: string; about: string } }) {
   const base = `/api/s/${encodeURIComponent(shop.id)}`;
   const [id, setId] = useState<string>();
@@ -35,24 +31,26 @@ export function ShopChat({ shop }: { shop: { id: string; name: string; about: st
   const [error, setError] = useState<string>();
   const feed = useRef<HTMLDivElement>(null);
 
-  // The conversation id lives in the URL (?c=) so a chat can be reopened or shown on the dashboard.
+  // The conversation id lives in the URL (?c=) so the customer can reopen the chat.
   useEffect(() => {
+    setId(new URL(window.location.href).searchParams.get("c") ?? undefined);
+  }, []);
+
+  const remember = useCallback((c: string | undefined) => {
     const url = new URL(window.location.href);
-    let c = url.searchParams.get("c");
-    if (!c) {
-      c = newId();
-      url.searchParams.set("c", c);
-      window.history.replaceState(null, "", url);
-    }
+    if (c) url.searchParams.set("c", c);
+    else url.searchParams.delete("c");
+    window.history.replaceState(null, "", url);
     setId(c);
   }, []);
 
   const refresh = useCallback(async () => {
     if (!id) return;
     const res = await fetch(`${base}/conversation/${id}`);
+    if (res.status === 404) return remember(undefined);
     const body = (await res.json()) as View;
     if (res.ok) setConv(body);
-  }, [id, base]);
+  }, [id, base, remember]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -70,7 +68,7 @@ export function ShopChat({ shop }: { shop: { id: string; name: string; about: st
   async function send(e: React.FormEvent) {
     e.preventDefault();
     const text = draft.trim();
-    if (!text || !id || busy) return;
+    if (!text || busy) return;
     setDraft("");
     setError(undefined);
     setPending({ from: "customer", text, at: new Date().toISOString() });
@@ -80,6 +78,7 @@ export function ShopChat({ shop }: { shop: { id: string; name: string; about: st
       const body = (await res.json()) as View;
       if (!res.ok) throw new Error(body.error ?? res.statusText);
       setConv(body);
+      if (body.id !== id) remember(body.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       await refresh();
@@ -90,13 +89,9 @@ export function ShopChat({ shop }: { shop: { id: string; name: string; about: st
   }
 
   function restart() {
-    const c = newId();
-    const url = new URL(window.location.href);
-    url.searchParams.set("c", c);
-    window.history.replaceState(null, "", url);
+    remember(undefined);
     setConv(undefined);
     setError(undefined);
-    setId(c);
   }
 
   const lines = [...(conv?.transcript ?? []), ...(pending ? [pending] : [])];
@@ -124,7 +119,6 @@ export function ShopChat({ shop }: { shop: { id: string; name: string; about: st
                 <Linkified text={l.text} />
                 <div className="meta">
                   {l.from === "owner" && <span className="chip owner">owner</span>}
-                  {l.tier && <span className={`chip ${l.tier}`}>{l.tier}{l.cost !== undefined ? ` · $${l.cost.toFixed(2)}` : ""}</span>}
                   <span>{time(l.at)}</span>
                 </div>
               </div>
@@ -132,11 +126,6 @@ export function ShopChat({ shop }: { shop: { id: string; name: string; about: st
           ),
         )}
         {error && <div className="system error">{error}</div>}
-      </div>
-
-      <div className="stats">
-        <span>conv {id ?? "..."}</span>
-        <span>{conv ? `${conv.calls} calls · AI $${conv.aiSpent.toFixed(2)} · ${conv.status}` : ""}</span>
       </div>
 
       <form className="composer" onSubmit={send}>

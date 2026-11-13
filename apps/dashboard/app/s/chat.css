@@ -42,7 +42,6 @@
   .composer button { width: 42px; height: 42px; border-radius: 50%; border: none; background: var(--accent); color: #fff; font-size: 18px; cursor: pointer; }
   .composer button:disabled { opacity: 0.5; cursor: default; }
   
-  .stats { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 4px 12px; background: #f7f8fa; border-top: 1px solid #e9edef; display: flex; justify-content: space-between; }
   .owner .bubble { background: #fff6d6; border-top-left-radius: 0; }
   .chip.owner { background: #f6e3a1; color: #6b4e00; }
 }
