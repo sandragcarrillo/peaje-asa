@@ -50,6 +50,10 @@ providers/            three mock inference providers that answer with 402
 11. Treasury end to end (disputes, float sweep, close with approvals): `npm run m3`. Pay the four printed links with the test card; the script waits, then works the chargebacks, sweeps the AI float and runs the close. Its book is `data/m3.db`; rerunning resumes where it stopped.
 12. Tests (no keys needed): `npm test`
 
+Buyer agents (Kit 10): every shop's products go into the platform's Airwallex Agentic Commerce catalogue, and a buyer's Claude shops them through the platform's merchant MCP. Airwallex calls `/api/agentic/checkout` (HMAC-signed) and the buyer signs in through the app's OAuth server, so both need a public https origin in `PUBLIC_URL`. Then `npm run kit10 -- setup` and `npm run kit10 -- products`.
+
+Deploy: two Railway services from one image, see [docs/DEPLOY.md](docs/DEPLOY.md).
+
 Sandbox only. No real money.
 
 ## Team
