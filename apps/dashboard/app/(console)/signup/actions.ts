@@ -28,5 +28,5 @@ export async function signUpAction(_prev: SignupState, form: FormData): Promise<
   if (result) return { ...result, values };
   const created = shops().byEmail(values.email.toLowerCase());
   if (created) syncCatalog(created.id);
-  redirect(sample ? "/" : "/catalog");
+  redirect("/");
 }

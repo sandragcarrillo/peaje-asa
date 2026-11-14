@@ -1,15 +1,27 @@
 import Link from "next/link";
 import { ActionForm } from "@/components/action-form";
 import { PageHead, Status } from "@/components/page-head";
+import { SetupSteps } from "@/components/setup-steps";
 import { aiSpendByTier, deps, metalFloat } from "@/lib/deps";
 import { requireOwner } from "@/lib/auth";
 import { money, usd, when } from "@/lib/format";
-import { openAirwallexAccountAction, reviewDisputesAction, runCloseAction, sweepFloatAction } from "./actions";
+import { setupOf } from "@/lib/shops";
+import { reviewDisputesAction, runCloseAction, sweepFloatAction } from "./actions";
 
 const KIND = { supplier: "Inventory", advance_repayment: "Advance repayment", owner_payout: "Profit to owner" } as const;
 
 export default async function Overview() {
   const { shop } = await requireOwner();
+  const setup = setupOf(shop);
+  // Until buyers can chat with the shop, the steps to get there are the whole page.
+  if (!setup.canSell) {
+    return (
+      <section className="max-w-3xl space-y-8">
+        <PageHead eyebrow={`${shop.name} · USD`} title="Welcome" sub="Your shop sells through a chat: an agent answers buyers, quotes within your rules and sends a payment link. A few steps and it's open." />
+        <SetupSteps shop={shop} />
+      </section>
+    );
+  }
   const { ledger, treasury, policy } = deps(shop.id);
   const pnl = ledger.pnl();
   const cash = ledger.cash();
@@ -53,17 +65,13 @@ export default async function Overview() {
         </div>
       ) : null}
 
-      {shop.airwallexAccountId && shop.payTo ? (
+      {setup.account && shop.payTo ? (
         <div className="flex flex-col gap-1.5 border border-border bg-panel p-5 text-sm sm:flex-row sm:items-center sm:justify-between">
           <span>Airwallex account <span className="font-mono text-xs">{shop.airwallexAccountId}</span>{owedByPlatform ? <span className="text-muted"> · {owedByPlatform} sales move there at the next close</span> : null}</span>
           <span className="text-muted">Inventory to {shop.payTo.supplier.accountName} · profit to {shop.payTo.owner.accountName}</span>
         </div>
       ) : (
-        <div className="space-y-3 border border-accent bg-panel p-5">
-          <p className="text-sm font-semibold">Open your shop's Airwallex account</p>
-          <p className="text-sm text-muted">The platform takes the card payments and moves each sale to your own Airwallex account. Inventory, your profit and the advance move from there. In the sandbox the KYC details are a sample and Airwallex's review is simulated; the supplier's and your payout accounts are sandbox accounts standing in for yours.</p>
-          <div className="max-w-xs"><ActionForm action={openAirwallexAccountAction} label="Open Airwallex account" pendingLabel="Opening (about 30 s)..." small /></div>
-        </div>
+        <SetupSteps shop={shop} />
       )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">

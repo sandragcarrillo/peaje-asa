@@ -28,7 +28,8 @@ export default async function Agents() {
         <PageHead eyebrow="Metal testnet" title="Agents" sub="Three agents pay for their model calls from your shop's Metal account, each under a mandate your key signs: who it may pay, the most per payment, its budget. Metal enforces them on chain." />
         {process.env.METAL_RPC_URL ? (
           <div className="max-w-2xl space-y-3 border border-border bg-panel p-5">
-            <h2 className="font-semibold">Set up your Metal account</h2>
+            <h2 className="font-semibold">Give your agents a wallet</h2>
+            <p className="text-sm text-muted">Each reply costs a few cents of AI model time. Your agents pay it from this wallet on Metal (a test network, no real money), only within the limits your key approves.</p>
             <MetalSetup shopId={shop.id} metalOwner={shop.metalOwner} pending={pending?.kind === "setup" ? pending : undefined} />
           </div>
         ) : (

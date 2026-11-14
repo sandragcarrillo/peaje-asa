@@ -1,5 +1,6 @@
 import { allow, clientIp, newConversationId, shopOr404, tooMany, validConversationId, view } from "@/lib/chat";
 import { deps } from "@/lib/deps";
+import { setupOf } from "@/lib/shops";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ shop: s
   if (found.error) return found.error;
   const { id: given, text } = (await req.json().catch(() => ({}))) as { id?: string; text?: string };
   if (!text?.trim()) return Response.json({ error: "text is required" }, { status: 400 });
+  // A shop without products or without its agent's wallet can't answer yet; say so instead of failing.
+  if (!setupOf(found.shop).canSell) return Response.json({ error: "This shop is still getting ready. Come back in a little while." }, { status: 409 });
   const { seller } = deps(found.shop.id);
   if (given !== undefined && (!validConversationId(given) || !seller.conversation(given))) {
     return Response.json({ error: "no such conversation" }, { status: 404 });

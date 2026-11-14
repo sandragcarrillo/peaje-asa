@@ -21,7 +21,7 @@ function Linkified({ text }: { text: string }) {
 }
 
 /** The customer side of a shop: a chat with its seller agent. The server makes the conversation id on the first message; it then lives in the URL (?c=). */
-export function ShopChat({ shop }: { shop: { id: string; name: string; about: string } }) {
+export function ShopChat({ shop, ready }: { shop: { id: string; name: string; about: string }; ready: boolean }) {
   const base = `/api/s/${encodeURIComponent(shop.id)}`;
   const [id, setId] = useState<string>();
   const [conv, setConv] = useState<View>();
@@ -95,7 +95,7 @@ export function ShopChat({ shop }: { shop: { id: string; name: string; about: st
   }
 
   const lines = [...(conv?.transcript ?? []), ...(pending ? [pending] : [])];
-  const status = busy ? "typing..." : conv?.status === "escalated" ? "the owner will reply" : "online";
+  const status = !ready ? "opening soon" : busy ? "typing..." : conv?.status === "escalated" ? "the owner will reply" : "online";
 
   return (
     <div className="chat-app"><main className="phone">
@@ -109,7 +109,7 @@ export function ShopChat({ shop }: { shop: { id: string; name: string; about: st
       </header>
 
       <div className="feed" ref={feed}>
-        <div className="system">{shop.about.charAt(0).toUpperCase() + shop.about.slice(1)}. Ask what you need.</div>
+        <div className="system">{shop.about.charAt(0).toUpperCase() + shop.about.slice(1)}. {ready ? "Ask what you need." : "This shop is still getting ready. Come back in a little while."}</div>
         {lines.map((l, i) =>
           l.from === "system" ? (
             <div key={i} className="system"><Linkified text={l.text} /></div>
@@ -129,8 +129,8 @@ export function ShopChat({ shop }: { shop: { id: string; name: string; about: st
       </div>
 
       <form className="composer" onSubmit={send}>
-        <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Type a message" autoFocus />
-        <button type="submit" disabled={busy || !draft.trim()} aria-label="Send">➤</button>
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={ready ? "Type a message" : "Not open yet"} disabled={!ready} autoFocus />
+        <button type="submit" disabled={!ready || busy || !draft.trim()} aria-label="Send">➤</button>
       </form>
     </main></div>
   );

@@ -49,7 +49,7 @@ function ApprovalCard({ approval, ownerKey, onDone }: { approval: Approval; owne
   }
   return (
     <div className="space-y-3 border border-accent/60 bg-bg p-4">
-      <p className="text-sm font-semibold">Your key signs this</p>
+      <p className="text-sm font-semibold">Approve these limits with your key</p>
       <ul className="list-disc space-y-1 pl-5 text-sm">{approval.summary.map((s, i) => <li key={i}>{s}</li>)}</ul>
       <p className="break-all font-mono text-[11px] text-faint">account {approval.account} · digest {approval.digest.slice(0, 18)}… · valid until {expires}</p>
       <button type="button" onClick={approve} disabled={busy} className="btn btn-primario">{busy ? "Signing and sending..." : "Approve with my key"}</button>
@@ -118,18 +118,18 @@ export function MetalSetup({ shopId, metalOwner, pending }: { shopId: string; me
     <div className="space-y-4">
       {key === null && !metalOwner ? (
         <>
-          <p className="text-sm text-muted">This makes your owner key here, in this browser, and saves a copy as a file on your computer. Keep that file: it's the only other copy, we never see the key. Then it creates your shop's Metal account and asks your key to approve one mandate per agent.</p>
-          <button type="button" onClick={create} disabled={busy} className="btn btn-primario">{busy ? "Creating your account..." : "Create my owner key"}</button>
+          <p className="text-sm text-muted">First your browser makes your key and downloads a copy to your computer: keep that file, it&apos;s the only other copy and we never see it. Then the wallet is created and you approve your agents&apos; limits with the key. About a minute.</p>
+          <button type="button" onClick={create} disabled={busy} className="btn btn-primario">{busy ? "Creating your wallet..." : "Create the wallet"}</button>
         </>
       ) : key === null ? (
         <>
-          <p className="text-sm text-muted">Your shop's owner key isn't in this browser. Load the backup file you saved when you set it up.</p>
+          <p className="text-sm text-muted">Your key isn't in this browser. Load the file that downloaded when you created the wallet.</p>
           <RestoreKey shopId={shopId} onKey={setKey} />
         </>
       ) : approval ? null : (
         <>
-          <p className="text-sm text-muted">Your key is in this browser ({key.address.slice(0, 10)}…). Continue where setup stopped.</p>
-          <button type="button" onClick={() => start(key)} disabled={busy} className="btn btn-primario">{busy ? "Working..." : "Continue setup"}</button>
+          <p className="text-sm text-muted">Your key is in this browser. Pick up where the setup stopped.</p>
+          <button type="button" onClick={() => start(key)} disabled={busy} className="btn btn-primario">{busy ? "Working..." : "Continue"}</button>
         </>
       )}
       <Result r={result} />

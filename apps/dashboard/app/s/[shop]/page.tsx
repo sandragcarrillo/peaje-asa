@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ShopChat } from "@/components/shop-chat";
-import { getShop } from "@/lib/shops";
+import { getShop, setupOf } from "@/lib/shops";
 import "../chat.css";
 
 export const dynamic = "force-dynamic";
@@ -17,5 +17,5 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ShopPage({ params }: Props) {
   const shop = getShop((await params).shop);
   if (!shop) notFound();
-  return <ShopChat shop={{ id: shop.id, name: shop.name, about: shop.about }} />;
+  return <ShopChat shop={{ id: shop.id, name: shop.name, about: shop.about }} ready={setupOf(shop).canSell} />;
 }

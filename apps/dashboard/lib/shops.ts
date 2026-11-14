@@ -7,7 +7,7 @@ import "./env";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_SHOP, ShopStore, type Shop } from "@peaje-asa/ledger";
-import { metalDir } from "@peaje-asa/metal";
+import { metalDir, metalReady } from "@peaje-asa/metal";
 import { defaultPolicy, type OwnerPolicy } from "@peaje-asa/policy";
 import { SAMPLE_ABOUT } from "@peaje-asa/seller-agent";
 import { root } from "./env";
@@ -38,3 +38,16 @@ export const platformMetalDir = () => metalDir(root);
 
 /** Where the shop's agent keys and mandates live. The owner's key is never here: it stays in their browser. */
 export const metalDirFor = (shopId: string) => join(root, "data/shops", shopId, "metal");
+
+/**
+ * Where a shop stands. Buyers can chat once it has products and its agent has a wallet to pay model
+ * calls (without Metal configured the providers take the x-paid header and no wallet is needed);
+ * the Airwallex account is where sales are paid out to.
+ */
+export function setupOf(shop: Shop) {
+  const products = policyOf(shop).catalog.filter((p) => !p.archived).length;
+  const wallet = !process.env.METAL_RPC_URL || metalReady(metalDirFor(shop.id));
+  const account = Boolean(shop.airwallexAccountId && shop.payTo);
+  const canSell = products > 0 && wallet;
+  return { products, wallet, account, canSell, done: canSell && account };
+}
