@@ -10,10 +10,11 @@
  * Metal testnet: the 402 is a real `exact` offer in USDZ to the provider's own address, and Metal's
  * facilitator settles the payment before Claude runs. Without it, the old `x-paid: 1` header stands in.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gunzipSync } from "node:zlib";
 import Anthropic from "@anthropic-ai/sdk";
 import { serve } from "@hono/node-server";
 import { METAL_NETWORKS, registerMetalScheme } from "@metalntwx/metal-pay";
@@ -68,6 +69,33 @@ interface PaidRequest {
 }
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
+/**
+ * On a fresh server, writes the platform's files into data/ from SEED_DATA (as scripts/seed-data.mjs
+ * does), whatever the start command, so the providers sell over Metal like the app expects.
+ * Files already on disk are kept.
+ */
+function seedData() {
+  const seed = process.env.SEED_DATA;
+  if (!seed) return;
+  try {
+    const files = JSON.parse(gunzipSync(Buffer.from(seed, "base64")).toString("utf8")) as Record<string, string>;
+    let wrote = 0;
+    for (const [rel, body] of Object.entries(files)) {
+      if (!rel.startsWith("data/") || rel.includes("..")) throw new Error(`path outside data/: ${rel}`);
+      const path = resolve(root, rel);
+      if (existsSync(path)) continue;
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, body, { mode: 0o600 });
+      wrote++;
+    }
+    console.log(`seed: wrote ${wrote} of ${Object.keys(files).length} file(s)`);
+  } catch (e) {
+    console.error(`seed: SEED_DATA could not be read: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+seedData();
+
 const payeesFile = process.env.METAL_PROVIDERS_FILE ?? resolve(root, "data/metal/providers.json");
 const payees: Record<string, `0x${string}`> | undefined = existsSync(payeesFile) ? JSON.parse(readFileSync(payeesFile, "utf8")) : undefined;
 
