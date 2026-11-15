@@ -8,10 +8,11 @@ A small business usually sells over chat, checks payment screenshots by hand and
 
 1. **Sell.** A seller agent answers buyers in a chat, quotes, negotiates discounts without going below the owner's margin and sends a card payment link.
 2. **Verify payments.** Every payment is checked with Airwallex, never by a screenshot, and every sale gets a signed order.
-3. **Pay for themselves.** Each reply costs a few cents of model time. The agent pays it from its own Metal wallet, under a mandate the owner signed.
-4. **Run the books and pay the business.** A treasury agent pays the supplier, keeps a cash reserve, sends the profit to the owner and asks before any large payment.
-5. **Defend chargebacks** with the signed order and the chat as evidence.
-6. **Back an advance.** Because the agents see every sale, they can offer the shop an advance against future revenue and collect it from new sales.
+3. **Sell to other agents.** A buyer's AI assistant can't type a card number. It pays the shop in USDZ over x402 on Metal for a signed order, within a mandate its own owner signed.
+4. **Pay for their own AI, within the owner's limits.** The platform charges the shop per AI reply, like any service that bills AI by use. The difference: the agent pays each reply from the shop's Metal wallet, and the limits the owner signed hold on chain.
+5. **Run the books and pay the business.** A treasury agent pays the supplier, keeps a cash reserve, sends the profit to the owner and asks before any large payment.
+6. **Defend chargebacks** with the signed order and the chat as evidence.
+7. **Back an advance.** Because the agents see every sale, they can offer the shop an advance against future revenue and collect it from new sales.
 
 Built on [Peaje](https://github.com/sandragcarrillo/peaje), Airwallex and Metal for the Airwallex Agentic Banking Hackathon. Sandbox and testnet only: no real money moves.
 
@@ -29,31 +30,40 @@ Built on [Peaje](https://github.com/sandragcarrillo/peaje), Airwallex and Metal 
 - **Amounts never come from the model.** A payment link takes a quote id; the quote's price comes from the catalog or a discount the rules accepted.
 - **The owner holds the keys.** Each shop's Metal account is controlled by a key generated in the owner's browser. The server only holds agent keys that can't spend outside their mandates.
 - **Nothing is forced.** Each money move ends when Airwallex reports it. The sandbox simulator is used only for what someone else does in production: Airwallex's KYC review, a cardholder opening a chargeback, and the Metal-to-Airwallex deposit.
-- **Spend follows value.** Before each model call the seller agent reads live prices from three providers and picks the best model the deal can afford. If nothing fits, it hands the conversation to the owner.
+- **Spend follows value.** Before each reply the seller agent reads the platform's live price for each model and picks the best one the deal can afford. If nothing fits, it hands the conversation to the owner.
 
 ## How it works
 
 | Piece | What it does | Airwallex / Metal |
 |---|---|---|
-| Seller agent | Quotes and negotiates within the owner's margin floor, spends more AI only on deals worth it, escalates unprofitable conversations | Inference bought by live price on Metal (Kit 12) |
+| Seller agent | Quotes and negotiates within the owner's margin floor, spends more AI only on deals worth it, escalates unprofitable conversations | Each AI reply paid to the platform on Metal, under the owner's mandate (Kit 12) |
 | Trust layer | Verified card payment and a signed order per sale | Payment intents |
 | Treasury agent | Pays agent costs, keeps a reserve, pays suppliers, sends profit to the owner, asks for approval on big payments | Connected account per shop (Kit 5), Airwallex Pay transfers, charges (Kits 1, 5, 11) |
 | Disputes | Defends chargebacks with the signed order | Payment disputes (Kit 4) |
 | Agent credit | Advance offer computed from the agent's own sales data | Platform-to-shop transfer, repaid with charges (Kit 5) |
 | Buyer agents | Shops' products in the platform's catalogue; per-item x402 route with a signed order, checked against the buyer's mandate | Agentic Commerce (Kit 10), Metal mandates |
 
-### AI costs on Metal
+### Metal: agents that pay and get paid
 
-- Three providers sell calls to real Claude models: cheap (Haiku), mid (Sonnet), premium (Opus). Each answers an unpaid request with a 402 offer whose price rises with demand.
-- The owner signs one mandate per agent (seller, disputes, treasury): who it may pay, the most per payment, the total budget. Metal enforces them on chain.
+- **Buyer agents pay the shop.** Each product has an x402 route. The buyer's agent gets a signed order, pays it in USDZ under its own mandate, and the sale is booked like a card sale.
+- **The shop's agents pay for their AI.** The platform sells replies at three model levels: cheap (Haiku), mid (Sonnet), premium (Opus). An unpaid request gets a 402 with the current price, which goes up while a model is busy and comes back down after. Once Metal settles the payment, the platform calls Claude.
+- **Why not a monthly bill:** the owner signs one mandate per agent (seller, disputes, treasury): who it may pay, the most per payment, the total budget. Metal enforces them on chain, so an agent can't overspend even if the platform's server gets it wrong.
 - When prices rise, the treasury can move budget between agents, never above the total the owner signed, and the owner approves the change with their key.
 - Unused float is swept back to Airwallex.
 
 ### Close, disputes and advance
 
-- **Close:** inventory first, then the advance repayment, then the owner's profit, never below the reserve. Above the threshold it asks; each approval binds the exact terms and is used once.
+- **Close:** each sale moves from the platform to the shop's account minus the platform fee. Then inventory first, then the advance repayment, then the owner's profit, never below the reserve. Above the threshold it asks; each approval binds the exact terms and is used once.
 - **Disputes:** accepted when the amount is under the fee, defended when the case is strong (matching signed order, customer agreement in the chat, signed delivery), sent to the owner when the customer wrote and got no answer. The model only writes the defense.
 - **Advance:** 50% of 30-day net profit, reduced by the share of orders given back after a dispute, 6% fee, repaid with 10% of each new sale before the owner's profit.
+
+## Pricing
+
+- **10% of every sale the agents handle**, at least 1 USD per sale: the shop's chat, its website widget and buyer agents alike. Card processing is included: the platform owns the card payments and pays Airwallex's fee out of the 10%. A refund doesn't return it, as with card fees.
+- **AI replies** at the platform's price per reply, paid from the shop's Metal wallet within the owner's limits.
+- **6% on an advance.**
+
+No monthly fee: a shop that doesn't sell pays nothing but the replies it used.
 
 ## Repo layout
 
@@ -63,10 +73,10 @@ packages/policy       margins, limits, reserve, prices (rules in code)
 packages/ledger       sales, signed orders, costs, payouts, advance offer
 packages/airwallex    sandbox client, simulations isolated
 packages/treasury-agent/src/rails.ts   MoneyRails: where money moves (Airwallex is one adapter)
-packages/metal        inference payments and mandates on Metal testnet
+packages/metal        AI payments and mandates on Metal testnet
 packages/seller-agent
 packages/treasury-agent
-providers/            three mock inference providers that answer with 402
+providers/            the platform's AI service: three model levels that answer with a 402, then call Claude
 ```
 
 ## Setup
@@ -77,11 +87,11 @@ providers/            three mock inference providers that answer with 402
 4. Create the order signing key: `npm run keys:order` (appends `ORDER_SIGNING_KEY` to `.env`).
 5. Smoke test Airwallex: `npm run check:airwallex`
 6. Money rails end to end (AI cost, card payment, signed order, owner payout): `npm run m1 -- --wait-link`, then pay the printed link with test card `4035 5010 0000 0008`, any future expiry and CVC.
-7. Add `ANTHROPIC_API_KEY` to `.env` (the mock providers forward paid calls to Claude), then start them: `npm run dev:providers`
+7. Add `ANTHROPIC_API_KEY` to `.env` (the AI service calls Claude once a call is paid), then start them: `npm run dev:providers`
 8. Metal (optional, every agent runs on a fake payer without it): put your testnet endpoint in `METAL_RPC_URL`, then `npm run metal:setup`. It writes the platform's side only: the providers' and the bridge's addresses, and a gas sponsor funded from the faucet. Restart the providers: they now sell over x402 on Metal.
 9. Owner login for the demo shop: `npm run keys:owner -- you@example.com` (asks for a password, writes `OWNER_EMAIL`, `OWNER_PASSWORD_HASH` and `SESSION_SECRET` to `.env`). Then `npm run dev:dashboard` and open http://localhost:3001. Anyone can open another shop at `/signup`; each shop has its own book, catalog, rules and chats. A shop's customer chat is `/s/<shop>` (the demo shop: http://localhost:3001/s/tostadero-andino). Each agent bubble shows the tier that answered and what the call cost. Everything goes to `data/peaje-asa.db` (override with `DB_PATH`).
 9b. Each shop's Metal account, from its Agents page: **Create my owner key** makes the owner's key in the browser (IndexedDB) and saves a backup file. The server never holds it. The sponsor creates the account, the faucet funds it with test USDZ, and the owner's key approves one mandate per agent (seller, disputes, treasury) with the caps and budgets in the shop's rules. The browser checks every batch is for its own account and recomputes the digest before signing; the server checks the signature is the owner's before the sponsor sends it. A rebalance works the same way: the treasury plans it, the owner's key approves the replacement. The server keeps the agents' mandate keys (they only pay within their mandate) and the key that signs the mandate credentials, which binds nothing without the owner's signature.
-10. The demo: with the providers and the app running, `npm run demo -- --fresh`. Three customers chat with the real agent; provider prices follow demand, so the scarce premium model gets dearer as the agent uses it. Approve the café in Conversations, pay the printed links with the test card, then in the dashboard: open the shop's Airwallex account (Overview, once), Review disputes, Run close, approve, Sweep float, Advance. `--fresh` moves the old book to `data/backup-<time>/`.
+10. The demo: with the providers and the app running, `npm run demo -- --fresh`. Three customers chat with the real agent; AI prices follow demand, so the premium model gets dearer as the agent uses it. Approve the café in Conversations, pay the printed links with the test card, then in the dashboard: open the shop's Airwallex account (Overview, once), Review disputes, Run close, approve, Sweep float, Advance. `--fresh` moves the old book to `data/backup-<time>/`.
 11. Treasury end to end (disputes, float sweep, close with approvals): `npm run m3`. Pay the four printed links with the test card; the script waits, then works the chargebacks, sweeps the AI float and runs the close. Its book is `data/m3.db`; rerunning resumes where it stopped.
 12. Tests (no keys needed): `npm test`
 
@@ -109,4 +119,4 @@ The platform owns the card payments (hosted payment links on its account). Each 
 
 Nothing in the app forces a status. What stays on the sandbox simulator is what someone else does in production: Airwallex's KYC review of the new account, the cardholder opening a chargeback, and the Metal-to-Airwallex deposit (the sandbox can't receive stablecoins). In the sandbox the KYC details are a sample, and the supplier's and owner's payout accounts are sandbox accounts standing in for theirs (`data/airwallex/sandbox-payees.json`).
 
-Provider prices: each provider serves a capacity of paid calls per 10 minutes at its base price; every paid call above that adds half the base, and the price falls back as calls age out (`PROVIDER_DEMAND_WINDOW_MS`). Quotes (402s) don't count.
+AI prices: each model level serves a capacity of paid calls per 10 minutes at its base price; every paid call above that adds half the base, and the price falls back as calls age out (`PROVIDER_DEMAND_WINDOW_MS`). Quotes (402s) don't count.

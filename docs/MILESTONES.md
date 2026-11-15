@@ -24,6 +24,8 @@ Submission: working demo, video under 5 min, repo with setup instructions.
 
 ## Decisions
 
+- Platform fee (Nov 14): 10% of every sale the agents handle, minimum 1 USD, card processing included (the platform owns the card payments and pays Airwallex's fee, about 2.8% + 0.30 on US cards). Booked on the sale entry; the close moves the sale minus the fee to the shop. Not returned on refunds. Sales booked before Nov 14 carry no fee. AI replies are charged apart, per reply on Metal; no monthly fee.
+
 - Start on the corridors the builder guide guarantees: business currency USD, owner payout US/USD LOCAL. Collecting and paying out in Colombia (COP) comes after the core demo works.
 - Policy is all USD. AI is paid in USDZ (1:1 with USD), so model prices compare directly with deal margins. Provider prices: 0.01 / 0.02 / 0.05 USD per call.
 - Mock providers front real Claude models (cheap = Haiku 5.5, mid = Sonnet 5.5, premium = Opus 5.5), so the call the agent pays for over Metal is the call that answers (M2).

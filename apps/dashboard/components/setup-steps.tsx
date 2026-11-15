@@ -47,7 +47,7 @@ export async function SetupSteps({ shop }: { shop: Shop }) {
 
         <Step n={2} title="Give your agent a wallet" done={s.wallet}>
           <p className="text-sm text-muted">
-            Each reply costs your agent a few cents of AI model time. It pays from its own wallet on Metal (a test network, no real money), within limits only you approve.
+            Your agent pays for its own AI replies (a few cents each) from a wallet on Metal&apos;s test network. You set how much it can spend, and nothing moves without your approval.
           </p>
           {s.wallet ? null : <MetalSetup shopId={shop.id} metalOwner={shop.metalOwner} pending={pending} />}
         </Step>

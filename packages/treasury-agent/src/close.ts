@@ -148,7 +148,8 @@ export async function settleWithPlatform(deps: CloseDeps): Promise<Settlement[]>
   const { ledger, store, policy, rails } = deps;
   const due: Pick<Settlement, "key" | "kind" | "amount" | "reference">[] = [];
   for (const e of ledger.all()) {
-    if (e.kind === "sale") due.push({ key: `sale:${e.orderId}`, kind: "sale", amount: e.amount, reference: `Sale ${e.orderId}` });
+    // The platform keeps its fee and moves the rest.
+    if (e.kind === "sale" && e.amount - (e.platformFee ?? 0) >= 0.01) due.push({ key: `sale:${e.orderId}`, kind: "sale", amount: round2(e.amount - (e.platformFee ?? 0)), reference: `Sale ${e.orderId}` });
     if (e.kind === "refund") due.push({ key: `refund:${e.ref ?? e.orderId}`, kind: "recovery", amount: e.amount, reference: `Refund ${e.orderId}` });
     if (e.kind === "dispute_fee") due.push({ key: `fee:${e.disputeId}`, kind: "recovery", amount: e.amount, reference: `Dispute fee ${e.disputeId}` });
   }

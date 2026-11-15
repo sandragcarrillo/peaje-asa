@@ -118,7 +118,7 @@ export function MetalSetup({ shopId, metalOwner, pending }: { shopId: string; me
     <div className="space-y-4">
       {key === null && !metalOwner ? (
         <>
-          <p className="text-sm text-muted">First your browser makes your key and downloads a copy to your computer: keep that file, it&apos;s the only other copy and we never see it. Then the wallet is created and you approve your agents&apos; limits with the key. About a minute.</p>
+          <p className="text-sm text-muted">Your browser creates your approval key and saves a backup file. Keep the file: it&apos;s the only copy, and we never see it. Then you approve your agent&apos;s limits. About a minute.</p>
           <button type="button" onClick={create} disabled={busy} className="btn btn-primario">{busy ? "Creating your wallet..." : "Create the wallet"}</button>
         </>
       ) : key === null ? (

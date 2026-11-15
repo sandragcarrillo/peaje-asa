@@ -10,7 +10,7 @@
  */
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { openDatabase, defaultDbPath, type Ledger, type OrderItem, type OrderSigner } from "@peaje-asa/ledger";
-import { findProduct, type Currency, type OwnerPolicy } from "@peaje-asa/policy";
+import { findProduct, platformFee, type Currency, type OwnerPolicy } from "@peaje-asa/policy";
 
 export * from "./oauth.js";
 
@@ -228,7 +228,7 @@ export function bookCheckoutPayment(intent: any, d: BookDeps): BookResult {
     });
     const cogs = r.items.reduce((s, i) => s + (findProduct(shop.policy.catalog, i.sku)?.unitCost ?? 0) * i.qty, 0);
     ledger.addOrder(order);
-    ledger.add({ kind: "sale", orderId, amount: want, cogs: Math.round(cogs * 100) / 100, currency: r.currency, at });
+    ledger.add({ kind: "sale", orderId, amount: want, cogs: Math.round(cogs * 100) / 100, platformFee: platformFee(want), currency: r.currency, at });
   }
   d.checkouts.save({ ...r, paymentIntentId: intent.id, orderId });
   return { booked: true, shopId: r.shopId, orderId, total: want };
@@ -269,6 +269,6 @@ export function bookMandateSale(s: MandateSale, d: Omit<BookDeps, "checkouts">):
     total: p.listPrice, currency: shop.policy.currency, paymentIntentId: `metal:${s.tx}`, createdAt: at,
   });
   ledger.addOrder(order);
-  ledger.add({ kind: "sale", orderId, amount: p.listPrice, cogs: p.unitCost ?? 0, currency: shop.policy.currency, at });
+  ledger.add({ kind: "sale", orderId, amount: p.listPrice, cogs: p.unitCost ?? 0, platformFee: platformFee(p.listPrice), currency: shop.policy.currency, at });
   return { booked: true, shopId: shop.id, orderId, total: p.listPrice };
 }

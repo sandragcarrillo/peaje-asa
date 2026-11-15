@@ -36,7 +36,7 @@ export default async function Overview() {
 
   const stats = [
     { valor: money(cash), texto: `Cash per the books (your Airwallex account once sales settle). The close never goes below the ${money(policy.reserveFloor)} reserve.` },
-    { valor: money(pnl.netProfit), texto: `Net profit after inventory, refunds, dispute fees, model calls and financing.` },
+    { valor: money(pnl.netProfit), texto: `Net profit after inventory, refunds, the platform fee, dispute fees, model calls and financing.` },
     { valor: money(pnl.paidToOwner), texto: "Already paid out to you." },
     { valor: `${money(float)}`, texto: `USDZ on Metal for model calls. Above ${policy.aiFloatTarget}, it's swept back to Airwallex.` },
   ];
@@ -44,6 +44,7 @@ export default async function Overview() {
     ["Sales", pnl.revenue],
     ["Inventory cost", -pnl.cogs],
     ["Gross profit", pnl.grossProfit, true],
+    ["Platform fee (10%, card fees included)", -pnl.platformFees],
     ["Model calls (paid from Metal)", -pnl.aiCosts],
     ["Refunds", -pnl.refunds],
     ["Dispute fees", -pnl.disputeFees],
@@ -123,7 +124,7 @@ export default async function Overview() {
               </li>
             ))}
             <li className="border-t border-border pt-3 text-xs text-muted">
-              Each call is paid to a provider from the Metal float, capped per conversation at {Math.round(policy.maxAiSpendShare * 100)}% of the deal.
+              Each reply is paid to the platform from your agents' Metal wallet, capped per conversation at {Math.round(policy.maxAiSpendShare * 100)}% of the deal.
             </li>
           </ul>
         </div>

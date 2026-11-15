@@ -257,3 +257,12 @@ test("advance: sized from recent profit and disputes, accepted only as shown, re
   assert.equal(ledger.advances().outstanding, 75.6);
   assert.equal(ledger.pnl().financingCosts, 15.6);
 });
+
+test("the platform keeps its fee and moves the rest of each sale", async () => {
+  const ledger = new Ledger("USD", ":memory:");
+  const store = new TreasuryStore(":memory:");
+  const rails = fakeRails();
+  ledger.add({ kind: "sale", orderId: "o1", amount: 28, cogs: 12, platformFee: 2.8, currency: "USD", at });
+  const r = await runClose({ ledger, store, rails, policy: { ...p, reserveFloor: 0, approvalThreshold: 10_000 }, day: "2026-11-02", waitMs: 0 });
+  assert.deepEqual(r.settled.map((x) => [x.kind, x.amount]), [["sale", 25.2]]);
+});

@@ -12,7 +12,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { Airwallex } from "@peaje-asa/airwallex";
 import type { Ledger, OrderSigner } from "@peaje-asa/ledger";
 import { MandateRefused, PaidCallFailed, PriceAboveCap, type InferencePayer, type InferenceProvider, type Offer } from "@peaje-asa/metal";
-import { aiBudgetFor, chooseTier, findProduct, type ModelTier, type OwnerPolicy } from "@peaje-asa/policy";
+import { aiBudgetFor, chooseTier, findProduct, platformFee, type ModelTier, type OwnerPolicy } from "@peaje-asa/policy";
 import type { Conversation, ConversationStore, Quote, TranscriptLine } from "./store.js";
 import { runTool, sellerTools, type ToolContext } from "./tools.js";
 
@@ -362,7 +362,7 @@ export class SellerAgent {
       total: q.total, currency: q.currency, paymentIntentId, paymentLinkId: p.linkId, createdAt: now(),
     });
     ledger.addOrder(order);
-    ledger.add({ kind: "sale", orderId: order.orderId, amount: q.total, cogs: round2(findProduct(this.deps.policy.catalog, q.sku)!.unitCost * q.qty), currency: policy.currency, at: now() });
+    ledger.add({ kind: "sale", orderId: order.orderId, amount: q.total, cogs: round2(findProduct(this.deps.policy.catalog, q.sku)!.unitCost * q.qty), platformFee: platformFee(q.total), currency: policy.currency, at: now() });
     p.paymentIntentId = paymentIntentId;
     c.status = "paid";
     c.transcript.push({ from: "system", text: `Payment verified with Airwallex. Order ${order.orderId} signed.`, at: now() });

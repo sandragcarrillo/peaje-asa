@@ -12,7 +12,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { Airwallex, AirwallexError } from "../packages/airwallex/src/index.js";
 import { Ledger, OrderSigner, verifyOrder, type OrderItem } from "../packages/ledger/src/index.js";
 import { FakeInferencePayer } from "../packages/metal/src/index.js";
-import { defaultPolicy, findProduct } from "../packages/policy/src/index.js";
+import { defaultPolicy, findProduct, platformFee } from "../packages/policy/src/index.js";
 
 const policy = defaultPolicy;
 const awx = Airwallex.fromEnv();
@@ -124,7 +124,7 @@ try {
   });
   ledger.addOrder(order);
   const cogs = items.reduce((s, i) => s + i.qty * findProduct(policy.catalog, i.sku)!.unitCost, 0);
-  ledger.add({ kind: "sale", orderId, amount: total, cogs, currency: policy.currency, at: now() });
+  ledger.add({ kind: "sale", orderId, amount: total, cogs, platformFee: platformFee(total), currency: policy.currency, at: now() });
   const tampered = { ...order, total: order.total - 1 };
   console.log(`3. Verified ${paid.status} ${paid.amount} ${paid.currency}. Signed order ${orderId}: valid=${verifyOrder(order)}, tampered copy valid=${verifyOrder(tampered)}`);
 

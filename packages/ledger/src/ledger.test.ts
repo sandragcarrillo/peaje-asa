@@ -50,3 +50,12 @@ test("each shop reads only its own book, and shops get free ids", async () => {
   assert.equal(shops.byEmail(" a@X.com ")?.id, "cafe-nandu"); // emails are stored and looked up lowercased
   assert.throws(() => shops.create({ id: "other", name: "o", about: "x", ownerEmail: "a@x.com", passwordHash: "h", policy: {} as any }));
 });
+
+test("the platform fee comes out of cash and profit", () => {
+  const l = new Ledger("USD", ":memory:");
+  l.add({ kind: "sale", orderId: "o1", amount: 28, cogs: 12, platformFee: 2.8, currency: "USD", at });
+  assert.equal(l.cash(), 25.2);
+  assert.equal(l.pnl().platformFees, 2.8);
+  assert.equal(l.pnl().netProfit, 13.2);
+  l.close();
+});

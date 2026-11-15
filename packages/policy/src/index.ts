@@ -82,6 +82,17 @@ export const defaultPolicy: OwnerPolicy = {
 };
 
 export type ModelTier = "cheap" | "mid" | "premium";
+/**
+ * What the platform keeps from every sale its agents handle, card processing included: the platform
+ * owns the card payments and pays Airwallex's fee out of this. Set by the platform, not the owner.
+ */
+export const PLATFORM_FEE = { share: 0.1, min: 1 } as const;
+
+/** The platform's fee on a sale: 10%, at least 1, never more than the sale. */
+export function platformFee(amount: number): number {
+  return Math.round(Math.min(amount, Math.max(PLATFORM_FEE.min, amount * PLATFORM_FEE.share)) * 100) / 100;
+}
+
 export const TIERS_BEST_FIRST: readonly ModelTier[] = ["premium", "mid", "cheap"];
 
 /** What a provider's latest 402 offer says: its price per call and how fast it currently answers. */

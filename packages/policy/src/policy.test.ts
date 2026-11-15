@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { aiBudgetFor, checkOffer, chooseTier, defaultPolicy as p, expectedMargin, findProduct, lowestAutoPrice, planRebalance } from "./index.js";
+import { aiBudgetFor, checkOffer, chooseTier, defaultPolicy as p, expectedMargin, findProduct, lowestAutoPrice, planRebalance, platformFee } from "./index.js";
 
 const offers = {
   cheap: { price: 0.01, latencyMs: 300 },
@@ -63,4 +63,10 @@ test("planRebalance: spare budget moves to the agent that can't pay its runway; 
   assert.deepEqual(tight.changes, [{ agent: "disputes", from: 2, to: 0.7 }, { agent: "seller", from: 6, to: 7.3 }]);
   assert.equal(tight.shortfall, 1.7);
   assert.match(tight.why, /only the owner/);
+});
+
+test("platform fee: 10% of the sale, at least 1, never more than the sale", () => {
+  assert.equal(platformFee(28), 2.8);
+  assert.equal(platformFee(5), 1);
+  assert.equal(platformFee(0.5), 0.5);
 });

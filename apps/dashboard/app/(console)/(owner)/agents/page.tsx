@@ -8,8 +8,8 @@ import { errorText, when } from "@/lib/format";
 import type { Approval } from "./actions";
 
 const ROLE = {
-  seller: "Pays model calls while it sells. May pay only the three providers.",
-  disputes: "Pays model calls to write chargeback defenses. May pay only the three providers.",
+  seller: "Pays for its AI replies while it sells. May pay only the platform's AI service.",
+  disputes: "Pays for the AI that writes chargeback defenses. May pay only the platform's AI service.",
   treasury: "Sweeps the unused float to Airwallex. May pay only the bridge.",
 } as const;
 
@@ -29,7 +29,7 @@ export default async function Agents() {
         {process.env.METAL_RPC_URL ? (
           <div className="max-w-2xl space-y-3 border border-border bg-panel p-5">
             <h2 className="font-semibold">Give your agents a wallet</h2>
-            <p className="text-sm text-muted">Each reply costs a few cents of AI model time. Your agents pay it from this wallet on Metal (a test network, no real money), only within the limits your key approves.</p>
+            <p className="text-sm text-muted">Your agents pay for their own AI replies (a few cents each) from this wallet on Metal&apos;s test network, only within the limits you approved.</p>
             <MetalSetup shopId={shop.id} metalOwner={shop.metalOwner} pending={pending?.kind === "setup" ? pending : undefined} />
           </div>
         ) : (
@@ -55,7 +55,7 @@ export default async function Agents() {
       <PageHead
         eyebrow="Metal testnet"
         title="Agents"
-        sub="Three agents pay from one Metal account, each under a mandate you signed: who it may pay, the most per payment, its budget. Metal enforces them on chain. When model prices rise, the treasury moves budget between agents, never above what you signed."
+        sub="Three agents pay from one Metal account, each under a mandate you signed: who it may pay, the most per payment, its budget. Metal enforces them on chain. When AI prices rise at busy times, the treasury moves budget between agents, never above what you signed."
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -105,7 +105,7 @@ export default async function Agents() {
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-3 border border-border bg-panel p-5">
           <h2 className="font-semibold">Rebalance</h2>
-          <p className="text-sm text-muted">Reads every mandate's spend from chain and the providers' live prices. An agent that can't pay for {policy.runwayCalls.seller} calls (seller) or {policy.runwayCalls.disputes} (disputes) at the cheapest price gets spare budget from the other. Nothing changes until your key, in this browser, approves the replacement; the cut goes first.</p>
+          <p className="text-sm text-muted">Reads every mandate's spend from chain and the AI service's live prices. An agent that can't pay for {policy.runwayCalls.seller} calls (seller) or {policy.runwayCalls.disputes} (disputes) at the cheapest price gets spare budget from the other. Nothing changes until your key, in this browser, approves the replacement; the cut goes first.</p>
           <RebalancePanel shopId={shop.id} metalOwner={shop.metalOwner} pending={pending} />
         </div>
         <div className="space-y-3">

@@ -34,7 +34,8 @@ export interface SignedOrder {
 export type DisputeStatus = "open" | "challenged" | "accepted" | "escalated" | "won" | "lost";
 
 export type LedgerEntry =
-  | { kind: "sale"; orderId: string; amount: number; cogs: number; currency: Currency; at: string }
+  /** `platformFee` stays with the platform when the sale moves to the shop. Sales booked before the fee have none. */
+  | { kind: "sale"; orderId: string; amount: number; cogs: number; platformFee?: number; currency: Currency; at: string }
   /** Paid from the Metal float, not from the Airwallex wallet. */
   | { kind: "ai_cost"; conversationId: string; provider: string; amount: number; currency: Currency; at: string; txHash?: string }
   | { kind: "supplier_payment"; ref: string; amount: number; currency: Currency; at: string }
@@ -142,6 +143,7 @@ export class Ledger {
     let cash = 0;
     for (const e of this.all()) {
       if (e.kind === "sale" || e.kind === "bridge_in" || e.kind === "advance") cash += e.amount;
+      if (e.kind === "sale") cash -= e.platformFee ?? 0;
       if (e.kind === "refund" || e.kind === "dispute_fee" || e.kind === "supplier_payment" || e.kind === "owner_payout" || e.kind === "advance_repayment") cash -= e.amount;
     }
     return round2(cash);
@@ -153,10 +155,10 @@ export class Ledger {
 
   /** Profit and loss, optionally only for entries at or after `since` (ISO time). */
   pnl(since?: string) {
-    let revenue = 0, cogs = 0, aiCosts = 0, refunds = 0, disputeFees = 0, financing = 0, payouts = 0, supplier = 0;
+    let revenue = 0, cogs = 0, platformFees = 0, aiCosts = 0, refunds = 0, disputeFees = 0, financing = 0, payouts = 0, supplier = 0;
     for (const e of this.all()) {
       if (since && e.at < since) continue;
-      if (e.kind === "sale") { revenue += e.amount; cogs += e.cogs; }
+      if (e.kind === "sale") { revenue += e.amount; cogs += e.cogs; platformFees += e.platformFee ?? 0; }
       if (e.kind === "ai_cost") aiCosts += e.amount;
       if (e.kind === "refund") refunds += e.amount;
       if (e.kind === "dispute_fee") disputeFees += e.amount;
@@ -165,9 +167,9 @@ export class Ledger {
       if (e.kind === "supplier_payment") supplier += e.amount;
     }
     const grossProfit = revenue - cogs - refunds;
-    const netProfit = grossProfit - aiCosts - disputeFees - financing;
+    const netProfit = grossProfit - platformFees - aiCosts - disputeFees - financing;
     return {
-      currency: this.currency, revenue: round2(revenue), cogs: round2(cogs), aiCosts: round2(aiCosts), refunds: round2(refunds),
+      currency: this.currency, revenue: round2(revenue), cogs: round2(cogs), platformFees: round2(platformFees), aiCosts: round2(aiCosts), refunds: round2(refunds),
       disputeFees: round2(disputeFees), financingCosts: round2(financing), grossProfit: round2(grossProfit), netProfit: round2(netProfit),
       paidToOwner: round2(payouts), paidToSuppliers: round2(supplier),
     };
