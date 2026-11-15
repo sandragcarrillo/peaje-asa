@@ -45,7 +45,7 @@ Card payments are the one thing the demo can't make for you: the sandbox confirm
 - **Amounts never come from the model.** A payment link takes a quote id; the quote's price comes from the catalog or a discount the rules accepted.
 - **The owner holds the keys.** Each shop's Alta account is controlled by a key generated in the owner's browser. The server only holds agent keys that can't spend outside their mandates.
 - **Nothing is forced.** Each money move ends when Airwallex reports it. The sandbox simulator is used only for what someone else does in production: Airwallex's KYC review, a cardholder opening a chargeback, and the Alta-to-Airwallex deposit.
-- **Spend follows value.** Before each reply the seller agent reads the platform's live price for each model and picks the best one the deal can afford. If nothing fits, it hands the conversation to the owner.
+- **Spend follows value.** Before each reply the seller agent reads the platform's live price for each model and picks the best one the deal can afford. If nothing fits and the customer already has a quote the agent may give, it sends the payment link without another AI call; otherwise it hands the conversation to the owner.
 
 ## How it works
 
