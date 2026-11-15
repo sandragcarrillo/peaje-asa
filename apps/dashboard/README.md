@@ -2,7 +2,7 @@
 
 The owner's view, on http://localhost:3001 (`npm run dev:dashboard`). Next.js 16 (App Router, server actions), Tailwind 4, Peaje's design system in its dark version.
 
-- **Overview**: cash per the books, net profit, paid to the owner, the Metal float, P&L, model spend by tier, and the treasury buttons (Run close, Review disputes, Sweep float).
+- **Overview**: cash per the books, net profit, paid to the owner, the Alta float, P&L, model spend by tier, and the treasury buttons (Run close, Review disputes, Sweep float).
 - **Conversations**: every chat; escalations wait at the top. Approve (the customer gets a payment link at exactly the escalated terms), decline, or reply as the owner.
 - **Approvals**: payments above the threshold. Approving a payout runs the close; approving a dispute refund reviews the queue.
 - **Disputes**: each chargeback with the decision, why, the defense that was sent and the evidence PDF.

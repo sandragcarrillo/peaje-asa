@@ -45,12 +45,12 @@ export const sellerTools: Anthropic.Beta.BetaToolUnion[] = [
   },
   {
     name: "create_payment_link",
-    description: "Create the card payment link for a quote once the customer agrees to buy. Returns the URL to send.",
+    description: "Create one card payment link for everything the customer agreed to buy: pass every quote in the order (one per product). Returns the single URL to send. A new link replaces an unpaid earlier one.",
     strict: true,
     input_schema: {
       type: "object",
-      properties: { quote_id: { type: "string" } },
-      required: ["quote_id"],
+      properties: { quote_ids: { type: "array", items: { type: "string" }, description: "The quotes in this order, one per product" } },
+      required: ["quote_ids"],
       additionalProperties: false,
     },
   },
@@ -74,7 +74,7 @@ export const sellerTools: Anthropic.Beta.BetaToolUnion[] = [
 /** Side effects the tools need from outside: payment links and escalations. */
 export interface ToolContext {
   policy: OwnerPolicy;
-  createPaymentLink(c: Conversation, q: Quote): Promise<{ url: string }>;
+  createPaymentLink(c: Conversation, quotes: Quote[]): Promise<{ url: string }>;
   escalate(c: Conversation, reason: string, kind: "owner_decision", terms?: { quote: Quote; requestedUnitPrice?: number }): void;
 }
 
@@ -125,11 +125,17 @@ export async function runTool(name: string, input: any, c: Conversation, ctx: To
       });
     }
     case "create_payment_link": {
-      const q = c.quotes.find((x) => x.id === input.quote_id);
-      if (!q) return fail(`unknown quote ${input.quote_id}`);
+      const ids: string[] = [...new Set<string>(Array.isArray(input.quote_ids) ? input.quote_ids : input.quote_id ? [input.quote_id] : [])];
+      if (!ids.length) return fail("pass the quote_ids of the order");
+      const quotes = ids.map((id) => c.quotes.find((x) => x.id === id));
+      const missing = ids.filter((_, i) => !quotes[i]);
+      if (missing.length) return fail(`unknown quote ${missing.join(", ")}`);
       if (c.status === "paid") return fail("this conversation's order is already paid");
-      const { url } = await ctx.createPaymentLink(c, q);
-      return ok({ url, total: q.total, currency: q.currency, note: "Send this link. Payment is confirmed automatically once the customer pays." });
+      const qs = quotes as Quote[];
+      if (new Set(qs.map((q) => q.sku)).size !== qs.length) return fail("two quotes for the same product: keep only the one the customer agreed to");
+      const { url } = await ctx.createPaymentLink(c, qs);
+      const total = Math.round(qs.reduce((n, q) => n + q.total, 0) * 100) / 100;
+      return ok({ url, total, currency: qs[0]!.currency, items: qs.map((q) => `${q.qty} x ${q.name}`), note: "Send this one link. Payment is confirmed automatically once the customer pays." });
     }
     case "escalate_to_owner": {
       const q = input.quote_id ? c.quotes.find((x) => x.id === input.quote_id) : undefined;

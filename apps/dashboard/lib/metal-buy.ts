@@ -1,8 +1,8 @@
 /**
- * Buyer agents paying in USDZ on Metal (Kit 11 + 12): `POST /api/s/<shop>/metal/<sku>` sells one item
+ * Buyer agents paying in USDZ on Alta (Kit 11 + 12): `POST /api/s/<shop>/metal/<sku>` sells one item
  * over x402. The 402 is an `exact` offer at list price to the platform's bridge, naming the item as
  * the one line it sells and asking for the agent's signed order. A payment is checked against the
- * agent's mandate before Metal's facilitator settles it (requireSignedOffer), the settlement is read
+ * agent's mandate before Alta's facilitator settles it (requireSignedOffer), the settlement is read
  * back from chain with the signed order (verifyMandatePayment), and only then is the sale booked in
  * the shop that sold it, like a card payment the Airwallex webhook confirms.
  */
@@ -25,7 +25,7 @@ const NET = METAL_NETWORKS.testnet;
 
 const g = globalThis as unknown as { asaMetalSeller?: x402ResourceServer; asaMetalRoutes?: Map<string, Promise<x402HTTPResourceServer>> };
 
-/** One resource server: Metal's scheme, and every offer that asks for a signed order checked before settling. */
+/** One resource server: Alta's scheme, and every offer that asks for a signed order checked before settling. */
 function seller() {
   if (g.asaMetalSeller) return g.asaMetalSeller;
   const rpcUrl = process.env.METAL_RPC_URL;
@@ -79,7 +79,7 @@ export async function sellOverMetal(req: Request, shopId: string, sku: string): 
   const shop = listing(shopId);
   const p = shop && findProduct(shop.policy.catalog, sku);
   if (!shop || !p || p.archived) return json(404, { error: "no such item on sale" });
-  if (shop.policy.currency !== "USD") return json(409, { error: `this shop sells in ${shop.policy.currency}; Metal pays in USDZ (USD)` });
+  if (shop.policy.currency !== "USD") return json(409, { error: `this shop sells in ${shop.policy.currency}; Alta pays in USDZ (USD)` });
 
   const url = new URL(req.url);
   const item = itemId(shop.id, p.sku);

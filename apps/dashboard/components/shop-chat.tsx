@@ -61,6 +61,12 @@ export function ShopChat({ shop, ready, embedded = false }: { shop: { id: string
 
   useEffect(() => { refresh(); }, [refresh]);
 
+  // Embedded, tell the page around the chat that the conversation moved (a "Try it" back office reloads its numbers). No content is sent.
+  const beat = conv ? `${conv.status}:${JSON.stringify(conv).length}` : "";
+  useEffect(() => {
+    if (embedded && beat && window.parent !== window) window.parent.postMessage({ type: "asa-chat-update" }, "*");
+  }, [embedded, beat]);
+
   // While a payment link is out, ask the server to check Airwallex every few seconds; while the owner has the chat, look for their reply.
   useEffect(() => {
     if (conv?.status !== "awaiting_payment" && conv?.status !== "escalated") return;

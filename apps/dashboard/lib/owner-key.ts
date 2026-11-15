@@ -1,5 +1,5 @@
 /**
- * The shop owner's Metal key, in the owner's browser only (IndexedDB, plus a backup file they save).
+ * The shop owner's Alta key, in the owner's browser only (IndexedDB, plus a backup file they save).
  * It signs the batches the shop's account runs. Before signing, the browser checks the batch itself:
  * every call goes to the shop's own account, and the digest is recomputed here, not taken from the
  * server.
@@ -44,7 +44,7 @@ export function newKey(shopId: string): OwnerKey {
 /** Saves the key as a file on the owner's computer. It's the only copy outside this browser. */
 export function downloadBackup(k: OwnerKey) {
   const body = {
-    note: "Owner key of your Peaje ASA shop's Metal account. Anyone with this file can approve payments from that account. Peaje ASA keeps no copy.",
+    note: "Owner key of your Peaje ASA shop's Alta account. Anyone with this file can approve payments from that account. Peaje ASA keeps no copy.",
     ...k,
   };
   const url = URL.createObjectURL(new Blob([`${JSON.stringify(body, null, 2)}\n`], { type: "application/json" }));

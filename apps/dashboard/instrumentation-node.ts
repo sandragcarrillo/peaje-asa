@@ -7,7 +7,7 @@ import { root } from "./lib/env";
 export function seedData() {
   const seed = process.env.SEED_DATA;
   if (!seed) {
-    if (!existsSync(resolve(root, "data/metal/bridge.json"))) console.warn("seed: SEED_DATA is not set and data/metal/bridge.json is missing; Metal payments will fail");
+    if (!existsSync(resolve(root, "data/metal/bridge.json"))) console.warn("seed: SEED_DATA is not set and data/metal/bridge.json is missing; Alta payments will fail");
     return;
   }
   try {

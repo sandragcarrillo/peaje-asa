@@ -68,7 +68,7 @@ if (!(await up())) {
 
 // The demo shop's own mandates, bound from its Agents page with the owner key in the browser.
 const METAL = join(process.cwd(), "data/shops/tostadero-andino/metal");
-console.log(metalReady(METAL) ? `Paying models on Metal testnet under the agents' mandates (${METAL}).` : "The demo shop has no Metal mandates yet (Agents page in the dashboard): model calls use the fake payer.");
+console.log(metalReady(METAL) ? `Paying models on Alta testnet under the agents' mandates (${METAL}).` : "The demo shop has no Alta mandates yet (Agents page in the dashboard): model calls use the fake payer.");
 const seller = new SellerAgent({ policy, ledger, store, payer: payerFor("seller", METAL), providers: tiers, awx, signer: OrderSigner.fromEnv(), shopName: SHOP });
 
 type Step = string;

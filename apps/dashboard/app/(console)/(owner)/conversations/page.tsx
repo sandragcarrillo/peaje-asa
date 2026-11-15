@@ -1,45 +1,84 @@
 import Link from "next/link";
-import { Empty, PageHead, Status } from "@/components/page-head";
+import { conversationState, conversationTitle, customerName, orderOf, SPEAKER, systemLine } from "@/components/conversation-copy";
+import { PageHead } from "@/components/page-head";
+import { ago, Badge, EmptyState, tiny } from "@/components/plain";
 import { deps } from "@/lib/deps";
 import { requireOwner } from "@/lib/auth";
-import { money, when } from "@/lib/format";
-
-const STATUS = { open: "talking", awaiting_payment: "link sent", paid: "paid", escalated: "needs you" } as const;
+import { money } from "@/lib/format";
 
 export default async function Conversations() {
   const { shop } = await requireOwner();
   const list = deps(shop.id).conversations.list()
-    .map((c) => ({ c, last: c.transcript.at(-1), forOwner: c.status === "escalated" && !c.escalation?.resolution }))
-    .sort((a, b) => Number(b.forOwner) - Number(a.forOwner) || (b.last?.at ?? b.c.createdAt).localeCompare(a.last?.at ?? a.c.createdAt));
+    .map((c) => ({ c, last: c.transcript.at(-1), state: conversationState(c) }))
+    .sort((a, b) => Number(b.state.forOwner) - Number(a.state.forOwner) || (b.last?.at ?? b.c.createdAt).localeCompare(a.last?.at ?? a.c.createdAt));
+
+  const count = (label: string) => list.filter((x) => x.state.label === label).length;
+  const summary = [
+    { label: "Waiting for you", value: count("Waiting for you"), hint: "The agent needs your yes or no", alert: true },
+    { label: "Payment link sent", value: count("Payment link sent"), hint: "The customer can pay now" },
+    { label: "Paid", value: count("Paid"), hint: "Confirmed by Airwallex" },
+    { label: "All chats", value: list.length, hint: "Every customer so far" },
+  ];
 
   return (
     <section className="space-y-8">
-      <PageHead eyebrow="Seller agent" title="Conversations" sub="Every chat the agent handled. The ones it couldn't close inside your rules wait for you at the top." />
+      <PageHead
+        eyebrow="Your sales agent"
+        title="Conversations"
+        sub="Every chat your AI sales agent had with a customer. It answers questions, offers prices inside your rules and sends a payment link. When a customer asks for something it can't decide, that chat moves to the top and waits for you."
+      />
+
       {list.length ? (
-        <ul className="divide-y divide-border/60 border border-border bg-panel text-sm">
-          {list.map(({ c, last, forOwner }) => {
-            const quote = c.quotes.find((q) => q.id === c.activeQuoteId);
-            return (
-              <li key={c.id}>
-                <Link href={`/conversations/${encodeURIComponent(c.id)}`} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-panel-2">
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="flex items-center gap-3">
-                      <span className="font-mono text-xs">{c.id}</span>
-                      <Status tone={forOwner ? "alert" : c.status === "paid" ? "accent" : "muted"}>{STATUS[c.status]}</Status>
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {summary.map((s) => (
+              <div key={s.label} className={`rounded-lg border bg-panel p-4 ${s.alert && s.value ? "border-red-500/50" : "border-border"}`}>
+                <p className="text-2xl font-bold tabular-nums">{s.value}</p>
+                <p className="text-sm font-medium">{s.label}</p>
+                <p className="text-xs text-muted">{s.hint}</p>
+              </div>
+            ))}
+          </div>
+
+          <ul className="space-y-2">
+            {list.map(({ c, last, state }) => {
+              const order = orderOf(c);
+              const preview = last ? (last.from === "system" ? systemLine(last.text).text : `${SPEAKER[last.from]}: ${last.text}`) : "No messages yet";
+              return (
+                <li key={c.id}>
+                  <Link
+                    href={`/conversations/${encodeURIComponent(c.id)}`}
+                    className={`group flex flex-col gap-3 rounded-lg border bg-panel p-4 transition-colors hover:bg-panel-2 sm:flex-row sm:items-center sm:justify-between ${state.forOwner ? "border-red-500/50" : "border-border"}`}
+                  >
+                    <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <Badge tone={state.tone}>{state.label}</Badge>
+                        <span className="text-xs text-muted">{customerName(c)} · {ago(last?.at ?? c.createdAt)}</span>
+                      </span>
+                      <span className="font-medium break-words">&ldquo;{conversationTitle(c)}&rdquo;</span>
+                      <span className="truncate text-sm text-muted">{preview}</span>
                     </span>
-                    <span className="truncate text-muted">{last ? `${last.from}: ${last.text}` : "No messages yet"}</span>
-                  </span>
-                  <span className="flex shrink-0 flex-col items-end gap-0.5 font-mono text-xs text-muted">
-                    <span className="text-text tabular-nums">{quote ? money(quote.total) : "-"}</span>
-                    <span>AI {money(c.aiSpent)} · {when(last?.at ?? c.createdAt)}</span>
-                  </span>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+                    <span className="flex shrink-0 items-end justify-between gap-6 border-t border-border/60 pt-3 sm:flex-col sm:items-end sm:gap-1 sm:border-0 sm:pt-0">
+                      <span className="flex flex-col sm:items-end">
+                        <span className="text-xs text-muted">{order ? order.label : "Order"}</span>
+                        <span className="font-semibold tabular-nums">{order ? `${money(order.total)} ${order.currency}` : "None yet"}</span>
+                      </span>
+                      <span className="text-right text-xs text-muted">AI replies cost {tiny(c.aiSpent)}</span>
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       ) : (
-        <Empty>No conversations yet. Open the shop chat and ask for a coffee, or run npm run demo.</Empty>
+        <EmptyState
+          title="No conversations yet"
+          action={<a href={`/s/${shop.id}`} target="_blank" rel="noreferrer" className="btn btn-primario btn-chico">Open your shop chat</a>}
+        >
+          <p>Each time a customer writes to your shop&apos;s chat, the conversation shows up here: what they asked, what the agent answered and whether they paid.</p>
+          <p>Try it yourself: open your shop chat and ask for something from your catalog.</p>
+        </EmptyState>
       )}
     </section>
   );

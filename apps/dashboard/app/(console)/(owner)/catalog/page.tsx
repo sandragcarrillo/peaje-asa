@@ -53,18 +53,18 @@ export default async function Catalog() {
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-5 py-4">
           <div className="space-y-1">
             <h2 className="font-semibold">Rules</h2>
-            <p className="text-sm text-muted">{shop.about.charAt(0).toUpperCase() + shop.about.slice(1)}. They apply to every product and every conversation.</p>
+            <p className="text-sm text-muted">They apply to every product and every conversation.</p>
           </div>
         </div>
-        <dl className="grid grid-cols-2 divide-border lg:grid-cols-4 lg:divide-x">
+        <dl className="grid gap-px bg-border [grid-template-columns:repeat(auto-fit,minmax(11rem,1fr))]">
           {[
             [`${pct(policy.marginFloor)}%`, "Lowest margin", "Never sells below it"],
             [`${pct(policy.maxAutoDiscount)}%`, "Discount on its own", "More than this goes to you"],
             [usd(policy.approvalThreshold), "You approve payments above", "Anything bigger waits for you"],
             [usd(policy.reserveFloor), "Cash always kept", "Payments never take you below it"],
           ].map(([value, label, hint]) => (
-            <div key={label} className="space-y-1 px-5 py-4">
-              <dd className="font-mono text-xl whitespace-nowrap tabular-nums sm:text-2xl">{value}</dd>
+            <div key={label} className="space-y-1 bg-panel px-5 py-4">
+              <dd className="font-mono text-xl whitespace-nowrap tabular-nums">{value}</dd>
               <dt className="text-sm">{label}</dt>
               <p className="text-xs text-muted">{hint}</p>
             </div>
@@ -81,7 +81,7 @@ export default async function Catalog() {
                 <textarea name="about" required maxLength={200} rows={2} defaultValue={shop.about} className={`${box} ${bare} resize-none`} />
                 <span className="mt-1 block text-xs text-muted">The agent introduces the shop with this.</span>
               </label>
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Lowest margin" unit="%" name="marginFloor" required inputMode="decimal" defaultValue={pct(policy.marginFloor)} />
                 <Field label="Discount on its own" unit="%" name="maxAutoDiscount" required inputMode="decimal" defaultValue={pct(policy.maxAutoDiscount)} />
                 <Field label="You approve above" unit="USD" name="approvalThreshold" required inputMode="decimal" defaultValue={policy.approvalThreshold} />
@@ -94,7 +94,7 @@ export default async function Catalog() {
 
       <Panel title="Add a product" sub="The agent can quote it from the next message.">
         <ActionForm action={addProductAction} label="Put it on sale" pendingLabel="Saving...">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr]">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Name" name="name" required maxLength={80} placeholder="Huila washed, 250 g" />
             <Field label="Category" name="category" maxLength={40} placeholder="beans, machines..." />
             <PricePreview rules={{ marginFloor: policy.marginFloor, maxAutoDiscount: policy.maxAutoDiscount }} />

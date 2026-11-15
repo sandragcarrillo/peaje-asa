@@ -134,7 +134,7 @@ test("a succeeded intent books the quoted checkout once, in the shop that sold i
   assert.equal(ledger.all().filter((e) => e.kind === "sale").length, 1);
 });
 
-test("a Metal payment books one item at list price, once per transaction", async () => {
+test("an Alta payment books one item at list price, once per transaction", async () => {
   const { Ledger, OrderSigner, verifyOrder } = await import("@peaje-asa/ledger");
   const { bookMandateSale, mandateOrderId } = await import("./index.js");
   process.env.ORDER_SIGNING_KEY = OrderSigner.generateEnvValue();

@@ -1,5 +1,5 @@
 /**
- * The platform's side of Metal testnet: the payees every shop's agents may pay, and the sponsor that
+ * The platform's side of Alta testnet: the payees every shop's agents may pay, and the sponsor that
  * sends the batches shop owners sign and pays their gas.
  *
  *   npm run metal:setup
@@ -46,4 +46,4 @@ if ((await accountBalance(sponsor.address)) < 5) {
   }
 }
 console.log(`   Sponsor ${sponsor.address}: ${await accountBalance(sponsor.address)} USDZ for gas`);
-console.log(`\nDone. Restart the providers so they sell over x402 on Metal (they read ${file("providers.json")}).`);
+console.log(`\nDone. Restart the providers so they sell over x402 on Alta (they read ${file("providers.json")}).`);

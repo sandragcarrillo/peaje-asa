@@ -1,13 +1,13 @@
 /**
- * Metal testnet side: paying inference providers in USDZ (Kit 12) and
+ * Alta testnet side: paying inference providers in USDZ (Kit 12) and
  * agent spending mandates (Kit 11). The real thing is in ./mandate.ts; the fakes below keep
- * everything running without a Metal endpoint (tests, a fresh clone).
- * Field-level details: Metal console > API Docs (console-testnet.metalntwx.com).
+ * everything running without an Alta endpoint (tests, a fresh clone).
+ * Field-level details: Alta console > API Docs (console-testnet.metalntwx.com).
  * Notes from the builder guide:
  * - A provider's price is whatever its next 402 offer says. Set maxAmount to the dearest price we accept.
  * - Clearing wallets pay ~1 request every 3s on testnet; retry `between_epochs` after retry.ms.
  * - Fresh wallet + deposit per job. Unused float withdraws ~10 min after last payment.
- * - Airwallex sandbox can't receive stablecoins: send USDZ to our Metal address, record the hash,
+ * - Airwallex sandbox can't receive stablecoins: send USDZ to our Alta address, record the hash,
  *   then simulate an Airwallex deposit with the hash as reference.
  */
 
@@ -22,7 +22,7 @@ export interface PaidCall<T> {
   provider: string;
   pricePaid: number; // USDZ major units (= USD, the business currency)
   result: T;
-  /** The settlement on Metal, when it was paid on chain. */
+  /** The settlement on Alta, when it was paid on chain. */
   txHash?: string;
 }
 
@@ -51,8 +51,8 @@ export interface InferencePayer {
 }
 
 /**
- * The Metal side of the treasury: the USDZ float the agents pay models from, and moving
- * what isn't needed to our Metal address. Airwallex can't receive stablecoins, so the
+ * The Alta side of the treasury: the USDZ float the agents pay models from, and moving
+ * what isn't needed to our Alta address. Airwallex can't receive stablecoins, so the
  * Airwallex side of the move is a simulated deposit referencing the transaction hash.
  */
 export interface MetalBridge {
@@ -71,7 +71,7 @@ export class FakeMetalBridge implements MetalBridge {
   }
 }
 
-/** Placeholder so the rest of the system can run end to end before Metal is wired. */
+/** Placeholder so the rest of the system can run end to end before Alta is wired. */
 export class FakeInferencePayer implements InferencePayer {
   async quote(p: InferenceProvider): Promise<Offer> {
     const res = await fetch(p.url, { method: "POST" });

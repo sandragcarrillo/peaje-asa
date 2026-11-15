@@ -7,7 +7,7 @@
  * Nobody sets it by hand; the agents' own traffic moves it.
  *
  * With data/metal/providers.json (written by `npm run metal:setup`) each provider sells over x402 on
- * Metal testnet: the 402 is a real `exact` offer in USDZ to the provider's own address, and Metal's
+ * Alta testnet: the 402 is a real `exact` offer in USDZ to the provider's own address, and Alta's
  * facilitator settles the payment before Claude runs. Without it, the old `x-paid: 1` header stands in.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -23,11 +23,12 @@ import { paymentMiddleware } from "@x402/hono";
 import { Hono } from "hono";
 
 // Base prices in USDZ major units per call (0.01 = one cent), matching Kit 12's 1/2/5 cents.
-// Capacity: paid calls per window served at the base price. The premium model is the scarcest.
+// Capacity: paid calls per window served at the base price, sized for many shops chatting at once
+// (a Try it shop alone brings ten customers). The premium model is the scarcest.
 const providers = [
-  { id: "cheap", port: 4101, model: "claude-haiku-5-5", base: 0.01, capacity: 12, latencyMs: 300, calls: [] as number[] },
-  { id: "mid", port: 4102, model: "claude-sonnet-5-5", base: 0.02, capacity: 6, latencyMs: 200, calls: [] as number[] },
-  { id: "premium", port: 4103, model: "claude-opus-5-5", base: 0.05, capacity: 3, latencyMs: 150, calls: [] as number[] },
+  { id: "cheap", port: 4101, model: "claude-haiku-5-5", base: 0.01, capacity: 150, latencyMs: 300, calls: [] as number[] },
+  { id: "mid", port: 4102, model: "claude-sonnet-5-5", base: 0.02, capacity: 60, latencyMs: 200, calls: [] as number[] },
+  { id: "premium", port: 4103, model: "claude-opus-5-5", base: 0.05, capacity: 20, latencyMs: 150, calls: [] as number[] },
 ];
 type Provider = (typeof providers)[number];
 
@@ -43,10 +44,13 @@ function demand(p: Provider) {
   return p.calls.length;
 }
 
-/** The price right now: the base up to capacity, then higher with every extra paid call. */
+/**
+ * The price right now: the base up to capacity, then higher with every extra paid call. Rounded up
+ * to whole cents, the only amounts an Alta mandate pays (0.075 would be refused, so it's 0.08).
+ */
 function priceOf(p: Provider) {
   const over = Math.max(0, demand(p) - p.capacity);
-  return Math.round(p.base * Math.min(MAX_MULTIPLE, 1 + STEP * over) * 10_000) / 10_000;
+  return Math.ceil(Math.round(p.base * Math.min(MAX_MULTIPLE, 1 + STEP * over) * 10_000) / 100) / 100;
 }
 
 /** Counts a paid call. The next offer already carries the new price. */
@@ -72,7 +76,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /**
  * On a fresh server, writes the platform's files into data/ from SEED_DATA (as scripts/seed-data.mjs
- * does), whatever the start command, so the providers sell over Metal like the app expects.
+ * does), whatever the start command, so the providers sell over Alta like the app expects.
  * Files already on disk are kept.
  */
 function seedData() {
@@ -141,12 +145,12 @@ function metalProvider(p: Provider, payTo: `0x${string}`) {
     ),
   );
   app.post("/", async (c) => {
-    // Reached only once Metal settled the payment.
+    // Reached only once Alta settled the payment.
     served(p);
     const { status, body } = await answer(p, await c.req.text());
     return c.json(body as object, status as 200);
   });
-  serve({ fetch: app.fetch, port: p.port }, () => console.log(`provider ${p.id} (${p.model}) on :${p.port} @ ${p.base} USDZ base, capacity ${p.capacity} calls / ${WINDOW_MS / 60_000} min, over x402 on Metal testnet, paid to ${payTo}`));
+  serve({ fetch: app.fetch, port: p.port }, () => console.log(`provider ${p.id} (${p.model}) on :${p.port} @ ${p.base} USDZ base, capacity ${p.capacity} calls / ${WINDOW_MS / 60_000} min, over x402 on Alta testnet, paid to ${payTo}`));
 }
 
 function headerProvider(p: Provider) {
@@ -161,7 +165,7 @@ function headerProvider(p: Provider) {
     served(p);
     const { status, body } = await answer(p, raw);
     json(status, body);
-  }).listen(p.port, () => console.log(`provider ${p.id} (${p.model}) on :${p.port} @ ${p.base} base (x-paid header, no Metal)`));
+  }).listen(p.port, () => console.log(`provider ${p.id} (${p.model}) on :${p.port} @ ${p.base} base (x-paid header, no Alta)`));
 }
 
 for (const p of providers) {

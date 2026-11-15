@@ -1,5 +1,5 @@
 /**
- * A buyer agent that pays shops in USDZ on Metal testnet, within a mandate its owner set.
+ * A buyer agent that pays shops in USDZ on Alta testnet, within a mandate its owner set.
  *
  *   npm run metal:buyer -- setup [item url]   account, test USDZ, and a mandate bound on chain
  *   npm run metal:buyer -- buy <item url>     buy one item: POST https://<app>/api/s/<shop>/metal/<sku>
@@ -8,7 +8,7 @@
  * The owner's key lives in data/buyer/ (BUYER_DIR) and signs the bind locally; the platform's sponsor
  * only sends it and pays the gas, as it does for shop owners. The mandate lets the agent pay one
  * payee, the address the shops' 402 offers name (read from the item url, else data/metal/bridge.json),
- * at most 50 USDZ a payment and 200 in all, for 30 days. Metal refuses anything outside it.
+ * at most 50 USDZ a payment and 200 in all, for 30 days. Alta refuses anything outside it.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

@@ -234,11 +234,11 @@ export function bookCheckoutPayment(intent: any, d: BookDeps): BookResult {
   return { booked: true, shopId: r.shopId, orderId, total: want };
 }
 
-/** A buyer agent's payment in USDZ on Metal for one item, already settled and verified against its mandate. */
+/** A buyer agent's payment in USDZ on Alta for one item, already settled and verified against its mandate. */
 export interface MandateSale {
   shopId: string;
   sku: string;
-  /** The settlement transaction on Metal. */
+  /** The settlement transaction on Alta. */
   tx: string;
   /** The buyer agent's account, which paid. */
   payer: string;
@@ -246,11 +246,11 @@ export interface MandateSale {
   amount: number;
 }
 
-/** The order a Metal settlement books as: one per transaction. */
+/** The order an Alta settlement books as: one per transaction. */
 export const mandateOrderId = (tx: string) => `ord_metal_${tx.slice(2, 18).toLowerCase()}`;
 
 /**
- * Books one item paid by a buyer agent under its Metal mandate: a signed order and a sale at list
+ * Books one item paid by a buyer agent under its Alta mandate: a signed order and a sale at list
  * price in the shop that sold it. The caller has settled the payment and verified it on chain; this
  * checks only that what settled is what the item costs. Same transaction twice books once.
  */

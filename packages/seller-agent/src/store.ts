@@ -49,10 +49,11 @@ export interface Conversation {
   transcript: TranscriptLine[];
   quotes: Quote[];
   activeQuoteId?: string;
-  payment?: { linkId: string; url: string; quoteId: string; orderId: string; paymentIntentId?: string };
+  /** The order's payment link. `quoteId` is its first quote; `quoteIds`, when there, all of them (older links have one). */
+  payment?: { linkId: string; url: string; quoteId: string; quoteIds?: string[]; orderId: string; paymentIntentId?: string };
   aiSpent: number;
   calls: number;
-  /** Payments Metal refused under the seller's mandate, kept so the owner sees the chain said no. */
+  /** Payments Alta refused under the seller's mandate, kept so the owner sees the chain said no. */
   mandateRefusals?: { tier: string; reason: string; at: string }[];
   /** Facts the system learned between turns (e.g. a verified payment), told to the model on the next turn. */
   pendingNotes: string[];
@@ -90,4 +91,11 @@ export class ConversationStore {
   list(): Conversation[] {
     return (this.db.prepare("SELECT body FROM conversations WHERE shop_id = ? ORDER BY updated_at DESC").all(this.shopId) as { body: string }[]).map((r) => JSON.parse(r.body));
   }
+}
+
+/** The quotes a conversation's payment link covers. */
+export function paymentQuotes(c: Conversation): Quote[] {
+  if (!c.payment) return [];
+  const ids = c.payment.quoteIds ?? [c.payment.quoteId];
+  return ids.map((id) => c.quotes.find((q) => q.id === id)).filter((q): q is Quote => Boolean(q));
 }

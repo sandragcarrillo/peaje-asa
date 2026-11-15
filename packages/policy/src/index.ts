@@ -33,7 +33,7 @@ export interface OwnerPolicy {
   maxProviderLatencyMs: number;
   /** What a chargeback costs the business even when it wins. The sandbox doesn't deduct it, so it lives here. */
   disputeFee: number;
-  /** USDZ to keep in the Metal float for upcoming model calls; the treasury sweeps the rest to Airwallex. */
+  /** USDZ to keep in the Alta float for upcoming model calls; the treasury sweeps the rest to Airwallex. */
   aiFloatTarget: number;
   /** Payouts smaller than this wait for the next close. */
   minPayout: number;
@@ -46,7 +46,7 @@ export interface OwnerPolicy {
   /** Share of each new sale held back to repay an advance. */
   advanceRepaymentShare: number;
   /**
-   * Each agent's mandate on the shared Metal account (Kit 11): the most per payment and the budget
+   * Each agent's mandate on the shared Alta account (Kit 11): the most per payment and the budget
    * it starts with. The owner signs these; the treasury may move budget between the AI agents but
    * never raises a cap or the total.
    */
@@ -55,7 +55,7 @@ export interface OwnerPolicy {
   runwayCalls: Record<AiAgent, number>;
 }
 
-/** The agents that pay from the Metal account. Seller and disputes buy model calls; treasury sweeps the float. */
+/** The agents that pay from the Alta account. Seller and disputes buy model calls; treasury sweeps the float. */
 export type MandatedAgent = "seller" | "disputes" | "treasury";
 export type AiAgent = "seller" | "disputes";
 

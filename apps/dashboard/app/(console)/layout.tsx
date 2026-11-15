@@ -16,9 +16,9 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
           </Link>
           {owner ? (
             <nav className="flex items-center gap-3 text-sm">
-              <span className="etiqueta hidden text-muted sm:inline">{owner.email}</span>
+              <span className="etiqueta hidden text-muted sm:inline">{owner.shop.demo ? "Demo shop" : owner.email}</span>
               <form action={logOutAction}>
-                <button type="submit" className="btn btn-secundario btn-chico">Sign out</button>
+                <button type="submit" className="btn btn-secundario btn-chico">{owner.shop.demo ? "Leave the demo" : "Sign out"}</button>
               </form>
             </nav>
           ) : (
@@ -31,7 +31,7 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
       </header>
       {children}
       <footer className="border-t border-border px-6 py-8">
-        <p className="etiqueta mx-auto max-w-5xl text-center text-muted">Peaje ASA · Airwallex sandbox · Metal testnet · 2026</p>
+        <p className="etiqueta mx-auto max-w-5xl text-center text-muted">Peaje ASA · Airwallex sandbox · Alta testnet · 2026</p>
       </footer>
     </div>
   );

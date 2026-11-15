@@ -4,7 +4,7 @@ import type { Airwallex } from "@peaje-asa/airwallex";
 import { Ledger, OrderSigner } from "@peaje-asa/ledger";
 import { FakeMetalBridge } from "@peaje-asa/metal";
 import { decideDispute, defaultPolicy as p, type DisputeFacts } from "@peaje-asa/policy";
-import { acceptAdvance, advanceDue, advanceOffer, approvalTerms, fakeRails, planClose, reviewDisputes, runClose, runMove, sweepFloat, textPdf, TreasuryStore, unansweredAfterEscalation, type AwxDispute, type ChatLine, type Obligation } from "./index.js";
+import { acceptAdvance, advanceDue, billStatus, advanceOffer, approvalTerms, fakeRails, planClose, reviewDisputes, runClose, runMove, sweepFloat, textPdf, TreasuryStore, unansweredAfterEscalation, type AwxDispute, type ChatLine, type Obligation } from "./index.js";
 
 process.env.ORDER_SIGNING_KEY ??= OrderSigner.generateEnvValue();
 const at = "2026-11-02T00:00:00.000Z";
@@ -81,9 +81,10 @@ test("close: nothing above the threshold moves until the owner approves those ex
   const rails = fakeRails();
   sell(ledger, "o1", 480, 330);
   sell(ledger, "o2", 480, 0);
-  sell(ledger, "o3", 200, 120); // cash 1160, inventory owed 450, profit 710
+  sell(ledger, "o3", 200, 120); // cash 1160, profit 710
   const policy = { ...p, reserveFloor: 100 };
-  const deps = { ledger, store, rails, policy, day: "2026-11-02", waitMs: 0 };
+  const bills = [{ id: "b1", supplier: "Andes Green Coffee Imports", amount: 450, dueDate: "2026-11-02" }];
+  const deps = { ledger, store, rails, policy, day: "2026-11-02", waitMs: 0, bills };
 
   const first = await runClose(deps);
   assert.equal(first.paid.length, 0);
@@ -200,7 +201,7 @@ test("dispute queue: accept, challenge with a PDF of the signed order, escalate,
   assert.equal(ledger.openDisputeHold(), 440, "only the challenged case is still at risk");
 });
 
-test("float sweep keeps the target on Metal and books the rest as cash", async () => {
+test("float sweep keeps the target on Alta and books the rest as cash", async () => {
   const ledger = new Ledger("USD", ":memory:");
   const bridge = new FakeMetalBridge(12.4);
   const credited: [number, string][] = [];
@@ -250,7 +251,8 @@ test("advance: sized from recent profit and disputes, accepted only as shown, re
 
   order("e", 2000, 1200, new Date(Date.now() + 1000).toISOString()); // after the advance: 10% of it is due, 200
   assert.equal(advanceDue(ledger), 200);
-  const r = await runClose({ ledger, store, rails, policy: { ...p, reserveFloor: 0, approvalThreshold: 10_000 }, day: "2026-11-03", waitMs: 0 });
+  const bills = [{ id: "b1", supplier: "S", amount: 300, dueDate: "2026-11-03" }];
+  const r = await runClose({ ledger, store, rails, policy: { ...p, reserveFloor: 0, approvalThreshold: 10_000 }, day: "2026-11-03", waitMs: 0, bills });
   assert.deepEqual(r.paid.map((x) => x.kind), ["supplier", "advance_repayment", "owner_payout"]);
   assert.equal(r.paid[1].beneficiaryId, "platform", "the repayment goes back to the platform that funded it");
   assert.equal(r.paid[1].amount, 200);
@@ -265,4 +267,24 @@ test("the platform keeps its fee and moves the rest of each sale", async () => {
   ledger.add({ kind: "sale", orderId: "o1", amount: 28, cogs: 12, platformFee: 2.8, currency: "USD", at });
   const r = await runClose({ ledger, store, rails, policy: { ...p, reserveFloor: 0, approvalThreshold: 10_000 }, day: "2026-11-02", waitMs: 0 });
   assert.deepEqual(r.settled.map((x) => [x.kind, x.amount]), [["sale", 25.2]]);
+});
+
+test("supplier bills: paid in full when due, never before, never twice", async () => {
+  const ledger = new Ledger("USD", ":memory:");
+  const store = new TreasuryStore(":memory:");
+  const rails = fakeRails();
+  sell(ledger, "o1", 500, 200); // sales don't create a supplier payment on their own
+  const bills = [
+    { id: "b1", supplier: "Andes Green Coffee Imports", amount: 120, dueDate: "2026-11-02" },
+    { id: "b2", supplier: "Andes Green Coffee Imports", amount: 80, dueDate: "2026-11-20" },
+  ];
+  const policy = { ...p, reserveFloor: 0, approvalThreshold: 10_000 };
+  const none = await runClose({ ledger, store, rails, policy, day: "2026-11-01", waitMs: 0 });
+  assert.equal(none.paid.filter((x) => x.kind === "supplier").length, 0, "no bills, no supplier payment");
+  const first = await runClose({ ledger, store, rails, policy, day: "2026-11-02", waitMs: 0, bills });
+  assert.deepEqual(first.paid.filter((x) => x.kind === "supplier").map((x) => [x.reference, x.amount]), [["Bill b1", 120]]);
+  assert.equal(billStatus(bills[0]!, store, "2026-11-02"), "paid");
+  assert.equal(billStatus(bills[1]!, store, "2026-11-02"), "upcoming");
+  const again = await runClose({ ledger, store, rails, policy, day: "2026-11-03", waitMs: 0, bills });
+  assert.equal(again.paid.filter((x) => x.kind === "supplier").length, 0, "a paid bill is never paid again");
 });

@@ -1,5 +1,5 @@
 /**
- * Packs the platform's Metal files (gas sponsor, bridge, provider addresses) into one value for
+ * Packs the platform's Alta files (gas sponsor, bridge, provider addresses) into one value for
  * the SEED_DATA variable on Railway. Writes it to the file given (mode 0600); never prints it.
  *   node scripts/pack-seed.mjs /path/to/seed.txt
  */

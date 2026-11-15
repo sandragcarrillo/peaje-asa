@@ -11,7 +11,7 @@ import { ConversationStore, SellerAgent } from "@peaje-asa/seller-agent";
 import { airwallexRails, ProviderDisputeWriter, TreasuryStore, type CloseDeps, type DisputeDeps, type MoneyRails } from "@peaje-asa/treasury-agent";
 import { getShop, metalDirFor, policyOf } from "./shops";
 
-/** USDZ the owner put on Metal for the agents' model calls. On testnet the faucet gives more; only this much is the business's. */
+/** USDZ the owner put on Alta for the agents' model calls. On testnet the faucet gives more; only this much is the business's. */
 const FLOAT_FUNDED = Number(process.env.METAL_FLOAT_FUNDED ?? 20);
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -33,7 +33,9 @@ function build(shopId: string) {
   const ledger = new Ledger(policy.currency, undefined, shop.id);
   const conversations = new ConversationStore(undefined, shop.id);
   const treasury = new TreasuryStore(undefined, shop.id);
-  const seller = new SellerAgent({ policy, ledger, store: conversations, payer: payerFor("seller", metal), providers, awx: awx(), signer: signer(), shopName: shop.name, shopAbout: shop.about });
+  const seller = new SellerAgent({ policy, ledger, store: conversations, payer: payerFor("seller", metal), providers, awx: awx(), signer: signer(), shopName: shop.name, shopAbout: shop.about,
+    // A demo shop's card sale gets a staged chargeback a moment later, so the disputes agent has real work.
+    ...(shop.demo && { onPaid: (c) => void import("./demo-history").then((m) => m.stageDemoDispute(shop.id, c.id)).catch((e) => console.error(e)) }) });
   const chatFor = (o: SignedOrder) => conversations.list().find((c) => c.payment?.orderId === o.orderId)?.transcript;
   const disputes: DisputeDeps = { ledger, store: treasury, awx: awx(), policy, chatFor, shopName: shop.name, writer: new ProviderDisputeWriter({ payer: payerFor("disputes", metal), providers, policy, ledger }) };
   return { shop, policy, metal, awx: awx(), ledger, conversations, treasury, seller, chatFor, disputes, providers };
@@ -41,7 +43,7 @@ function build(shopId: string) {
 
 export type ShopDeps = ReturnType<typeof build>;
 
-/** The shop's agents. Rebuilt when the stored shop changed (an edited catalog or rule takes effect on the next request) and once its Metal mandates are bound (the agents switch to paying on chain). */
+/** The shop's agents. Rebuilt when the stored shop changed (an edited catalog or rule takes effect on the next request) and once its Alta mandates are bound (the agents switch to paying on chain). */
 export function deps(shopId: string): ShopDeps {
   const shop = getShop(shopId);
   if (!shop) throw new Error(`No shop ${shopId}`);
@@ -70,10 +72,10 @@ export function closeDeps(shopId: string): CloseDeps {
   const { ledger, treasury, policy } = deps(shopId);
   const rails = railsFor(shopId);
   if (!rails) throw new NoAccount();
-  return { ledger, store: treasury, policy, rails };
+  return { ledger, store: treasury, policy, rails, bills: getShop(shopId)?.bills ?? [] };
 }
 
-/** The Metal float, from the books: what the owner funded, minus model calls, minus what was already swept. */
+/** The Alta float, from the books: what the owner funded, minus model calls, minus what was already swept. */
 export function metalFloat(shopId: string) {
   const { ledger } = deps(shopId);
   const bridged = ledger.all().reduce((s, e) => s + (e.kind === "bridge_in" ? e.amount : 0), 0);

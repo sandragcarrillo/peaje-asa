@@ -102,6 +102,33 @@ export async function signUp(input: { email: string; password: string; create: (
   return null;
 }
 
+// "Try it" shops: at most 3 per client an hour, and DEMO_SHOPS_PER_DAY (default 40) across everyone.
+const DEMO_PER_CLIENT_HOUR = 3;
+const demoTries = new Map<string, number[]>();
+
+/** Opens a judge's throwaway shop and signs them in, within the limits above. */
+export async function startDemo(create: () => Shop | Promise<Shop>): Promise<LoginResult> {
+  if (!loginConfigured()) return { error: "Try it isn't set up: SESSION_SECRET is missing." };
+  const client = await clientKey();
+  const recent = (demoTries.get(client) ?? []).filter((t) => t > Date.now() - 3_600_000);
+  if (recent.length >= DEMO_PER_CLIENT_HOUR) return { error: "You opened 3 demo shops in the last hour. Keep using the last one, or try again later." };
+  const since = new Date(Date.now() - 86_400_000).toISOString();
+  if (shops().list().filter((s) => s.demo && s.createdAt > since).length >= Number(process.env.DEMO_SHOPS_PER_DAY ?? 40)) {
+    return { error: "Today's demo shops are all taken. Open a shop with your email instead." };
+  }
+  demoTries.set(client, [...recent, Date.now()]);
+  await startSession(await create());
+  return null;
+}
+
+/** Signs a judge into a demo shop that already exists (built ahead of time). Nothing is created, so no limit applies. */
+export async function enterDemo(shop: Shop): Promise<LoginResult> {
+  if (!loginConfigured()) return { error: "Try it isn't set up: SESSION_SECRET is missing." };
+  if (!shop.demo) return { error: "That isn't a demo shop." };
+  await startSession(shop);
+  return null;
+}
+
 export async function logOut() {
   (await cookies()).delete(SESSION_COOKIE);
 }

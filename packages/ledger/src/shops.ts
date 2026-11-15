@@ -21,12 +21,16 @@ export interface Shop {
   embedOrigins?: string[];
   /** A judge's throwaway shop from "Try it". */
   demo?: boolean;
-  /** The address of the owner key made in the owner's browser. Set once: it owns the shop's Metal account. */
+  /** A demo shop the server built ahead of time: "preparing" while its story happens, "ready" to hand to the next judge. Gone once claimed. */
+  pool?: "preparing" | "ready" | "failed";
+  /** The address of the owner key made in the owner's browser. Set once: it owns the shop's Alta account. */
   metalOwner?: string;
   /** The shop's Airwallex connected account, once the platform opened one. Its money lives there. */
   airwallexAccountId?: string;
   /** Airwallex accounts the shop pays by Airwallex Pay: inventory to the supplier, profit to the owner. */
   payTo?: { supplier: { accountNumber: string; accountName: string }; owner: { accountNumber: string; accountName: string } };
+  /** Supplier bills the owner entered. The treasury agent pays each one on its due date. */
+  bills?: { id: string; supplier: string; amount: number; dueDate: string; note?: string; createdAt: string }[];
 }
 
 export const slugify = (name: string) =>
@@ -73,7 +77,7 @@ export class ShopStore {
   }
 
   /** Name, about, rules and catalog can change; the id and the owner's email can't. */
-  update(id: string, patch: Partial<Pick<Shop, "name" | "about" | "policy" | "airwallexAccountId" | "payTo" | "passwordHash" | "metalOwner" | "embedOrigins">>): Shop {
+  update(id: string, patch: Partial<Pick<Shop, "name" | "about" | "policy" | "airwallexAccountId" | "payTo" | "passwordHash" | "metalOwner" | "embedOrigins" | "bills" | "pool">>): Shop {
     const s = this.get(id);
     if (!s) throw new Error(`No shop ${id}`);
     const next = { ...s, ...patch };

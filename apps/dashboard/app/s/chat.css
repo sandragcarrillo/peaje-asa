@@ -38,8 +38,8 @@
   .system.error { background: #fde2e1; color: #a12622; }
   
   .composer { display: flex; gap: 8px; padding: 8px; background: #f0f2f5; }
-  .composer input { flex: 1; border: none; border-radius: 20px; padding: 10px 14px; font: inherit; outline: none; background: #fff; }
-  .composer button { width: 42px; height: 42px; border-radius: 50%; border: none; background: var(--accent); color: #fff; font-size: 18px; cursor: pointer; }
+  .composer input { flex: 1; min-width: 0; border: none; border-radius: 20px; padding: 10px 14px; font: inherit; outline: none; background: #fff; }
+  .composer button { flex: none; width: 42px; height: 42px; border-radius: 50%; border: none; background: var(--accent); color: #fff; font-size: 18px; cursor: pointer; }
   .composer button:disabled { opacity: 0.5; cursor: default; }
   
   /* Inside the widget frame on a shop's website: the frame is the window. */

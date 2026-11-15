@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { isAddressEqual } from "viem";
 import { approveAction, prepareRebalanceAction, startMetalSetupAction, type Approval, type MetalStep } from "@/app/(console)/(owner)/agents/actions";
 import { downloadBackup, loadKey, newKey, readBackup, saveKey, signApproval, type OwnerKey } from "@/lib/owner-key";
@@ -49,10 +49,15 @@ function ApprovalCard({ approval, ownerKey, onDone }: { approval: Approval; owne
   }
   return (
     <div className="space-y-3 border border-accent/60 bg-bg p-4">
-      <p className="text-sm font-semibold">Approve these limits with your key</p>
-      <ul className="list-disc space-y-1 pl-5 text-sm">{approval.summary.map((s, i) => <li key={i}>{s}</li>)}</ul>
-      <p className="break-all font-mono text-[11px] text-faint">account {approval.account} · digest {approval.digest.slice(0, 18)}… · valid until {expires}</p>
-      <button type="button" onClick={approve} disabled={busy} className="btn btn-primario">{busy ? "Signing and sending..." : "Approve with my key"}</button>
+      <p className="text-sm font-semibold">How much can your agents spend?</p>
+      <p className="text-sm text-muted">Amounts in USDZ, a test dollar. Your agents can&apos;t spend more than this, and only on what&apos;s listed.</p>
+      <ul className="list-disc space-y-1.5 pl-5 text-sm">{approval.summary.map((s, i) => <li key={i}>{s}</li>)}</ul>
+      <button type="button" onClick={approve} disabled={busy} className="btn btn-primario">{busy ? "Approving..." : "Approve"}</button>
+      <p className="text-xs text-muted">Your browser signs this with your key. Until you approve, your agents can&apos;t spend anything.</p>
+      <details className="text-[11px] text-faint">
+        <summary className="cursor-pointer">Technical details</summary>
+        <p className="mt-1 break-all font-mono">Alta account {approval.account} · digest {approval.digest.slice(0, 18)}… · valid until {expires}</p>
+      </details>
       {error ? <p role="alert" className="text-sm text-red-400">{error}</p> : null}
     </div>
   );
@@ -84,8 +89,12 @@ function RestoreKey({ shopId, onKey }: { shopId: string; onKey: (k: OwnerKey) =>
   );
 }
 
-/** First time: the owner's key is made here, saved to a file, and approves the agents' mandates. */
-export function MetalSetup({ shopId, metalOwner, pending }: { shopId: string; metalOwner?: string; pending?: Approval }) {
+/**
+ * First time: the owner's key is made here, saved to a file, and approves the agents' mandates.
+ * `auto` (a "Try it" shop): the same steps run on their own as soon as the page opens. The key is
+ * still made and kept in this browser and still signs the limits; there's just no backup file and no click.
+ */
+export function MetalSetup({ shopId, metalOwner, pending, auto = false }: { shopId: string; metalOwner?: string; pending?: Approval; auto?: boolean }) {
   const router = useRouter();
   const [key, setKey] = useOwnerKey(shopId, metalOwner);
   const [busy, setBusy] = useState(false);
@@ -108,12 +117,47 @@ export function MetalSetup({ shopId, metalOwner, pending }: { shopId: string; me
   async function create() {
     const k = newKey(shopId);
     await saveKey(k);
-    downloadBackup(k);
+    if (!auto) downloadBackup(k);
     setKey(k);
     await start(k);
   }
 
+  // Auto: make the key (or pick up the one already here), then sign the limits as soon as they're ready.
+  const ran = useRef(false);
+  useEffect(() => {
+    if (!auto || key === undefined || ran.current) return;
+    if (key === null && metalOwner) return;
+    ran.current = true;
+    (key === null ? create() : approval ? Promise.resolve() : start(key)).catch((e) => setResult({ ok: false, message: (e as Error).message }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto, key]);
+  const signed = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!auto || !key || !approval || signed.current === approval.digest) return;
+    signed.current = approval.digest;
+    (async () => {
+      setBusy(true);
+      try {
+        const r = await approveAction(approval.kind, approval.digest, await signApproval(key, approval));
+        if (r.ok && key.account === undefined && r.account) await saveKey({ ...key, account: r.account as `0x${string}` });
+        setResult(r.ok ? { ...r, message: "Your browser signed these limits with your key:", lines: [...approval.summary, ...(r.lines ?? [])] } : r);
+        if (r.ok) { setApproval(undefined); router.refresh(); }
+      } catch (e) {
+        setResult({ ok: false, message: (e as Error).message });
+      } finally {
+        setBusy(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto, key, approval]);
+
   if (key === undefined) return <p className="text-sm text-muted">Looking for your key in this browser...</p>;
+  if (auto && (key !== null || !metalOwner)) return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted">{busy || !result ? "Setting it up now: your browser made your key and is creating the wallet and signing its limits. About a minute." : null}</p>
+      <Result r={result} />
+    </div>
+  );
   return (
     <div className="space-y-4">
       {key === null && !metalOwner ? (

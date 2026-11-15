@@ -8,7 +8,7 @@ import { money, usd, when } from "@/lib/format";
 import { setupOf } from "@/lib/shops";
 import { reviewDisputesAction, runCloseAction, sweepFloatAction } from "./actions";
 
-const KIND = { supplier: "Inventory", advance_repayment: "Advance repayment", owner_payout: "Profit to owner" } as const;
+const KIND = { supplier: "Supplier bill", advance_repayment: "Advance repayment", owner_payout: "Profit to owner" } as const;
 
 export default async function Overview() {
   const { shop } = await requireOwner();
@@ -36,16 +36,16 @@ export default async function Overview() {
 
   const stats = [
     { valor: money(cash), texto: `Cash per the books (your Airwallex account once sales settle). The close never goes below the ${money(policy.reserveFloor)} reserve.` },
-    { valor: money(pnl.netProfit), texto: `Net profit after inventory, refunds, the platform fee, dispute fees, model calls and financing.` },
+    { valor: money(pnl.netProfit), texto: `Net profit after the cost of the products sold, refunds, the platform fee, dispute fees, model calls and financing.` },
     { valor: money(pnl.paidToOwner), texto: "Already paid out to you." },
-    { valor: `${money(float)}`, texto: `USDZ on Metal for model calls. Above ${policy.aiFloatTarget}, it's swept back to Airwallex.` },
+    { valor: `${money(float)}`, texto: `USDZ on Alta for model calls. Above ${policy.aiFloatTarget}, it's swept back to Airwallex.` },
   ];
   const rows: [string, number, boolean?][] = [
     ["Sales", pnl.revenue],
-    ["Inventory cost", -pnl.cogs],
+    ["Cost of the products sold", -pnl.cogs],
     ["Gross profit", pnl.grossProfit, true],
     ["Platform fee (10%, card fees included)", -pnl.platformFees],
-    ["Model calls (paid from Metal)", -pnl.aiCosts],
+    ["Model calls (paid from Alta)", -pnl.aiCosts],
     ["Refunds", -pnl.refunds],
     ["Dispute fees", -pnl.disputeFees],
     ["Advance fees", -pnl.financingCosts],
@@ -69,13 +69,13 @@ export default async function Overview() {
       {setup.account && shop.payTo ? (
         <div className="flex flex-col gap-1.5 border border-border bg-panel p-5 text-sm sm:flex-row sm:items-center sm:justify-between">
           <span>Airwallex account <span className="font-mono text-xs">{shop.airwallexAccountId}</span>{owedByPlatform ? <span className="text-muted"> · {owedByPlatform} sales move there at the next close</span> : null}</span>
-          <span className="text-muted">Inventory to {shop.payTo.supplier.accountName} · profit to {shop.payTo.owner.accountName}</span>
+          <span className="text-muted">Supplier bills to {shop.payTo.supplier.accountName} · profit to {shop.payTo.owner.accountName}</span>
         </div>
       ) : (
         <SetupSteps shop={shop} />
       )}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
         {stats.map((s) => (
           <div key={s.texto} className="border border-border bg-panel p-5">
             <p className="text-2xl font-bold tabular-nums">{s.valor}</p>
@@ -84,7 +84,7 @@ export default async function Overview() {
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
+      <div className="grid gap-6 [grid-template-columns:repeat(auto-fit,minmax(18rem,1fr))]">
         <div className="space-y-3">
           <h2 className="text-sm font-semibold">Profit and loss</h2>
           <table className="w-full border border-border bg-panel text-sm">
@@ -124,7 +124,7 @@ export default async function Overview() {
               </li>
             ))}
             <li className="border-t border-border pt-3 text-xs text-muted">
-              Each reply is paid to the platform from your agents' Metal wallet, capped per conversation at {Math.round(policy.maxAiSpendShare * 100)}% of the deal.
+              Each reply is paid to the platform from your agents' Alta wallet, capped per conversation at {Math.round(policy.maxAiSpendShare * 100)}% of the deal.
             </li>
           </ul>
         </div>
@@ -132,18 +132,21 @@ export default async function Overview() {
 
       <div className="space-y-3">
         <h2 className="text-sm font-semibold">Treasury</h2>
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="space-y-3 border border-border bg-panel p-5">
-            <p className="text-sm text-muted">Pay inventory, then the advance, then your profit. Keeps the reserve; asks above the threshold.</p>
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(14rem,1fr))]">
+          <div className="flex flex-col gap-3 border border-border bg-panel p-5">
+            <h3 className="font-semibold">Close the day</h3>
+            <p className="flex-1 text-sm text-muted">Pays the supplier bills that are due, then the advance, then your profit. Never goes below the reserve and asks you above the threshold.</p>
             <ActionForm action={runCloseAction} label="Run close" pendingLabel="Closing..." small />
           </div>
-          <div className="space-y-3 border border-border bg-panel p-5">
-            <p className="text-sm text-muted">Answer every chargeback by its deadline: accept, defend with the signed order, or ask you.</p>
+          <div className="flex flex-col gap-3 border border-border bg-panel p-5">
+            <h3 className="font-semibold">Chargebacks</h3>
+            <p className="flex-1 text-sm text-muted">Answers each one before its deadline: accepts it, defends it with the signed order, or asks you.</p>
             <ActionForm action={reviewDisputesAction} label="Review disputes" pendingLabel="Reviewing..." small secondary />
           </div>
-          <div className="space-y-3 border border-border bg-panel p-5">
-            <p className="text-sm text-muted">Move what the agents won't spend on model calls from Metal back to Airwallex.</p>
-            <ActionForm action={sweepFloatAction} label="Sweep float" pendingLabel="Sweeping..." small secondary />
+          <div className="flex flex-col gap-3 border border-border bg-panel p-5">
+            <h3 className="font-semibold">Spare AI money</h3>
+            <p className="flex-1 text-sm text-muted">Moves what your agents won&apos;t need for AI from Alta back to your Airwallex account.</p>
+            <ActionForm action={sweepFloatAction} label="Move it back" pendingLabel="Moving..." small secondary />
           </div>
         </div>
       </div>

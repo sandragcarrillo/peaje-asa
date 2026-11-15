@@ -1,5 +1,5 @@
 /**
- * The owner's key never reaches this server. Each shop's Metal account has one owner: a key made and
+ * The owner's key never reaches this server. Each shop's Alta account has one owner: a key made and
  * kept in the owner's browser. The server only prepares what the account must approve (binding or
  * replacing mandates), the browser signs the account's own digest, and a platform key (the sponsor)
  * sends the signed batch and pays its gas. Without the owner's signature the account runs nothing.
@@ -10,7 +10,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { accountFactoryFor, metalNetwork, rpcUrlFor } from "@metalntwx/metal-pay";
+import { USDZ, accountFactoryFor, metalNetwork, rpcUrlFor } from "@metalntwx/metal-pay";
 import {
   ACCOUNT_BATCH_MODE,
   FEE_PER_GAS,
@@ -29,12 +29,14 @@ import {
   defineChain,
   encodeAbiParameters,
   encodeFunctionData,
+  erc20Abi,
   getAddress,
   hashTypedData,
   hexToBigInt,
   http,
   isAddressEqual,
   parseAbiParameters,
+  parseUnits,
   recoverAddress,
   type Address,
   type Hex,
@@ -52,7 +54,7 @@ let client: PublicClient | undefined;
 export function metalClient(): PublicClient {
   if (client) return client;
   const url = rpcUrlFor(NETWORK, process.env.METAL_RPC_URL, "set METAL_RPC_URL");
-  const chain = defineChain({ id: NETWORK.chainId, name: "Metal testnet", nativeCurrency: { name: "Gas", symbol: "GAS", decimals: 18 }, rpcUrls: { default: { http: [url] } } });
+  const chain = defineChain({ id: NETWORK.chainId, name: "Alta testnet", nativeCurrency: { name: "Gas", symbol: "GAS", decimals: 18 }, rpcUrls: { default: { http: [url] } } });
   return (client = createPublicClient({ chain, transport: http(url) }) as PublicClient);
 }
 export const accountFactory = () => accountFactoryFor(NETWORK, undefined, "set the factory");
@@ -69,7 +71,19 @@ export async function sponsorKey(path: string) {
   return privateKeyToAccount(privateKey);
 }
 
-async function sendFrom(sponsor: ReturnType<typeof privateKeyToAccount>, call: MandateCall) {
+/**
+ * One transaction at a time per sending key. The sponsor sends for every shop owner and for the demo
+ * buyer agent; two sends at once from one key would pick the same nonce and one would be rejected.
+ */
+const lanes = new Map<string, Promise<unknown>>();
+function sendFrom(sponsor: ReturnType<typeof privateKeyToAccount>, call: MandateCall): Promise<Hex> {
+  const prev = lanes.get(sponsor.address) ?? Promise.resolve();
+  const next = prev.then(() => sendNow(sponsor, call), () => sendNow(sponsor, call));
+  lanes.set(sponsor.address, next.catch(() => undefined));
+  return next;
+}
+
+async function sendNow(sponsor: ReturnType<typeof privateKeyToAccount>, call: MandateCall) {
   const c = metalClient();
   const wallet = createWalletClient({ account: sponsor, chain: c.chain!, transport: custom(c) });
   const hash = await sendMandateCall(c, wallet, call).catch((e) => { throw new Error(publicMessage(e)); });
@@ -100,6 +114,20 @@ export async function deployOwnerAccount(owner: Address, sponsor: ReturnType<typ
     maxPriorityFeePerGas: FEE_PER_GAS,
   });
   return { account, transaction };
+}
+
+/**
+ * Testnet stand-in for the owner's first deposit when the faucet is busy: the sponsor sends `amount`
+ * USDZ of its own to the account. A plain token transfer; it grants no authority over the account.
+ */
+export async function fundFromSponsor(account: Address, amount: number, sponsor: ReturnType<typeof privateKeyToAccount>) {
+  return sendFrom(sponsor, {
+    to: USDZ.address as Address,
+    data: encodeFunctionData({ abi: erc20Abi, functionName: "transfer", args: [account, parseUnits(amount.toFixed(2), USDZ.decimals)] }),
+    gas: 200_000n,
+    maxFeePerGas: FEE_PER_GAS,
+    maxPriorityFeePerGas: FEE_PER_GAS,
+  });
 }
 
 /** A batch waiting for the owner's signature. Bigints as strings so it can be stored and sent to the browser. */

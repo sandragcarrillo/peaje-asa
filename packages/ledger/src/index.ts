@@ -35,19 +35,19 @@ export type DisputeStatus = "open" | "challenged" | "accepted" | "escalated" | "
 
 export type LedgerEntry =
   /** `platformFee` stays with the platform when the sale moves to the shop. Sales booked before the fee have none. */
-  | { kind: "sale"; orderId: string; amount: number; cogs: number; platformFee?: number; currency: Currency; at: string }
-  /** Paid from the Metal float, not from the Airwallex wallet. */
-  | { kind: "ai_cost"; conversationId: string; provider: string; amount: number; currency: Currency; at: string; txHash?: string }
+  | { kind: "sale"; orderId: string; amount: number; cogs: number; platformFee?: number; currency: Currency; at: string; sample?: boolean }
+  /** Paid from the Alta float, not from the Airwallex wallet. */
+  | { kind: "ai_cost"; conversationId: string; provider: string; amount: number; currency: Currency; at: string; txHash?: string; sample?: boolean }
   | { kind: "supplier_payment"; ref: string; amount: number; currency: Currency; at: string }
   | { kind: "owner_payout"; ref: string; amount: number; currency: Currency; at: string }
-  | { kind: "refund"; orderId: string; amount: number; currency: Currency; at: string; ref?: string }
+  | { kind: "refund"; orderId: string; amount: number; currency: Currency; at: string; ref?: string; sample?: boolean }
   /** One entry per status change; the latest one per dispute is its current state. */
   | { kind: "dispute"; disputeId: string; orderId?: string; amount: number; currency: Currency; stage: string; status: DisputeStatus; note?: string; defense?: string; fileId?: string; at: string }
   /** Revenue-based advance: cash in now, repaid from future sales. The fee is a cost when taken. */
   | { kind: "advance"; ref: string; amount: number; fee: number; repaymentShare: number; currency: Currency; at: string }
   | { kind: "advance_repayment"; ref: string; amount: number; currency: Currency; at: string }
   | { kind: "dispute_fee"; disputeId: string; amount: number; currency: Currency; at: string }
-  /** USDZ swept from the Metal float into the Airwallex wallet. */
+  /** USDZ swept from the Alta float into the Airwallex wallet. */
   | { kind: "bridge_in"; txHash: string; amount: number; currency: Currency; at: string }
   /** Shipment recorded by the shop. Not money; it's dispute evidence. */
   | { kind: "fulfillment"; orderId: string; carrier: string; tracking: string; shippedAt: string; deliveredAt?: string; signedBy?: string; at: string };
@@ -137,7 +137,7 @@ export class Ledger {
   /**
    * The business's own cash in the Airwallex wallet: what it collected minus what left.
    * The sandbox wallet is prefunded, so the treasury plans from this, never the raw balance.
-   * AI is paid from the Metal float; only what's swept back (bridge_in) counts here.
+   * AI is paid from the Alta float; only what's swept back (bridge_in) counts here.
    */
   cash() {
     let cash = 0;

@@ -1,17 +1,17 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { defaultPolicy, sampleCatalog } from "@peaje-asa/policy";
+import { defaultPolicy, demoShops } from "@peaje-asa/policy";
 import { signUp, type LoginResult } from "@/lib/auth";
 import { shops } from "@/lib/shops";
 import { syncCatalog } from "@/lib/storefront";
 
 export type SignupState = (LoginResult & { values?: Record<string, string> }) | null;
 
-/** Opens a shop with the default rules. Its catalog is the sample (to try it) or empty (to add products first). */
+/** Opens a shop with the default rules. Its catalog is empty, or a sample one from a demo shop kind the owner picked. */
 export async function signUpAction(_prev: SignupState, form: FormData): Promise<SignupState> {
   const values = { name: String(form.get("name") ?? "").trim(), about: String(form.get("about") ?? "").trim(), email: String(form.get("email") ?? "").trim() };
-  const sample = form.get("sample") === "on";
+  const sample = demoShops.find((k) => k.kind === form.get("sample"))?.catalog ?? [];
   if (values.name.length < 2 || values.name.length > 60) return { error: "Give the shop a name (2 to 60 characters).", values };
   if (values.about.length < 10 || values.about.length > 200) return { error: "Say in one line what the shop sells and where (10 to 200 characters).", values };
   const result = await signUp({
@@ -21,7 +21,7 @@ export async function signUpAction(_prev: SignupState, form: FormData): Promise<
       const store = shops();
       return store.create({
         id: store.freeId(values.name), name: values.name, about: values.about, ownerEmail: values.email, passwordHash,
-        policy: { ...defaultPolicy, catalog: sample ? sampleCatalog : [] },
+        policy: { ...defaultPolicy, catalog: [...sample] },
       });
     },
   });

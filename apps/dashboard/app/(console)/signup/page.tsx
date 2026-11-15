@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
+import { demoShops } from "@peaje-asa/policy";
 import { Etiqueta } from "@/components/etiqueta";
 import { signUpAction } from "./actions";
 
@@ -34,10 +35,18 @@ export default function Signup() {
               Password
               <input name="password" type="password" autoComplete="new-password" required minLength={12} placeholder="12 characters or more" className={input} />
             </label>
-            <label className="flex items-start gap-2 text-sm text-muted">
-              <input name="sample" type="checkbox" defaultChecked className="mt-1" />
-              <span>Start with a sample coffee catalog. Leave it off to add your own products first.</span>
-            </label>
+            <fieldset className="text-sm">
+              <legend>Want a sample catalog to start?</legend>
+              <p className="mt-0.5 text-xs text-muted">You can edit or remove every product later in Catalog.</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {[{ kind: "", label: "No, I'll add mine" }, ...demoShops].map((k, i) => (
+                  <label key={k.kind} className="cursor-pointer rounded-lg border border-border px-3 py-2 text-muted has-[:checked]:border-accent has-[:checked]:font-semibold has-[:checked]:text-text">
+                    <input type="radio" name="sample" value={k.kind} defaultChecked={i === 0} className="sr-only" />
+                    {k.label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             {state?.error ? <p role="alert" className="text-sm text-red-400">{state.error}</p> : null}
             <button type="submit" disabled={pending} className="btn btn-primario btn-ancho">
               {pending ? "Opening..." : "Open the shop"}

@@ -1,5 +1,5 @@
 /**
- * Kit 11: three agents paying from one Metal account, each under its own mandate. When model prices
+ * Kit 11: three agents paying from one Alta account, each under its own mandate. When model prices
  * rise, the treasury reads every mandate's spend from chain and `planRebalance` (policy) decides. The
  * new mandates wait for the owner: the owner's key, in their browser, signs one batch that replaces
  * them, cuts first, so the total the owner signed is never exceeded. Spend carries over a

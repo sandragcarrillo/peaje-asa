@@ -68,7 +68,7 @@ test("discovery runs on cheap and a small sale on mid; the payment link amount c
     call("a", "search_catalog", { query: "huila" }),
     call("b", "quote", { sku: "BEAN-HUILA-250", qty: 2 }),
     text("2 bags of Huila are 28 USD. Want them?"),
-    call("c", "create_payment_link", { quote_id: "q1" }),
+    call("c", "create_payment_link", { quote_ids: ["q1"] }),
     text("Here is your link: https://pay.example/1"),
   ]);
   await agent.handleMessage("c1", "Hi, 2 bags of Huila please");
@@ -143,4 +143,28 @@ test("the owner approves an escalated price: a quote at exactly those terms and 
   assert.equal(c.transcript.find((l) => l.from === "owner")?.text, "Deal, 400 each.");
   assert.match(c.pendingNotes.at(-1)!, /owner approved 2 x Home espresso machine at 400/);
   await assert.rejects(agent.resolveEscalation("c3", "declined", "owner@shop"), /not waiting/);
+});
+
+test("two products go on one payment link, and paying it books both in one signed order", async () => {
+  const { awx, ledger, agent } = setup([
+    call("a", "quote", { sku: "MACH-GRINDER", qty: 1 }),
+    call("b", "quote", { sku: "ACC-KETTLE", qty: 1 }),
+    call("c", "create_payment_link", { quote_ids: ["q1", "q2"] }),
+    text("Here is one link for both, 285 USD: https://pay.example/1"),
+  ]);
+  await agent.handleMessage("c2", "The burr grinder and the gooseneck kettle, one link please");
+  assert.equal(awx.links.length, 1);
+  assert.equal(awx.links[0].amount, 285);
+  assert.equal(awx.links[0].description, "1 x Burr grinder, 1 x Gooseneck kettle");
+
+  awx.links[0].status = "PAID";
+  awx.links[0].latest_successful_payment_intent_id = "int_2";
+  awx.paid.amount = 285;
+  assert.equal((await agent.checkPayment("c2"))?.status, "paid");
+  const order = ledger.order("ord_c2_q1_2")!;
+  assert.ok(verifyOrder(order));
+  assert.deepEqual(order.items.map((i) => i.sku), ["MACH-GRINDER", "ACC-KETTLE"]);
+  const pnl = ledger.pnl();
+  assert.equal(pnl.revenue, 285);
+  assert.equal(pnl.cogs, 188);
 });

@@ -11,11 +11,13 @@ import type { ActionResult } from "@/components/action-form";
 import { requireOwner } from "@/lib/auth";
 import { closeDeps, deps, metalBridge, NoAccount, railsFor } from "@/lib/deps";
 import { root } from "@/lib/env";
+import { openShopAccount } from "@/lib/account";
 import { shops } from "@/lib/shops";
 import { metalReady } from "@peaje-asa/metal";
+import { paymentQuotes } from "@peaje-asa/seller-agent";
 import { errorText, usd } from "@/lib/format";
 
-const LABEL = { supplier: "Inventory", advance_repayment: "Advance repayment", owner_payout: "Profit to owner" } as const;
+const LABEL = { supplier: "Supplier bill", advance_repayment: "Advance repayment", owner_payout: "Profit to owner" } as const;
 
 type Owner = Awaited<ReturnType<typeof requireOwner>>;
 
@@ -82,10 +84,10 @@ export async function sweepFloatAction(): Promise<ActionResult> {
     if (!shop.airwallexAccountId) throw new NoAccount();
     const ga = (((await awx.globalAccountsOf(shop.airwallexAccountId)) as any).items ?? []).find((g: any) => g.status === "ACTIVE")?.id;
     if (!ga) throw new Error("The shop's Airwallex account has no active global account yet.");
-    // The guide's Metal-to-Airwallex path: Airwallex can't receive USDZ, so the deposit into the shop's account is simulated with the Metal hash.
-    const r = await sweepFloat(metalBridge(shop.id), ledger, policy, (amount, txHash) => awx.simulate.deposit(ga, amount, txHash, "Peaje ASA Metal float", shop.airwallexAccountId));
-    if (!r.swept) return { ok: true, message: `Nothing to sweep: ${r.balance} USDZ on Metal, the agents keep ${policy.aiFloatTarget} for model calls.` };
-    return { ok: true, message: `Swept ${r.swept} USDZ from Metal to Airwallex. ${r.balance} USDZ stays for model calls.`, lines: [metalReady(metal) ? `Pulled on Metal testnet under the treasury mandate: ${r.txHash}. Airwallex can't receive USDZ, so the deposit on its side is simulated with this hash.` : `Bridge tx ${r.txHash} (fake bridge: Metal isn't set up)`] };
+    // The guide's Alta-to-Airwallex path: Airwallex can't receive USDZ, so the deposit into the shop's account is simulated with the Alta hash.
+    const r = await sweepFloat(metalBridge(shop.id), ledger, policy, (amount, txHash) => awx.simulate.deposit(ga, amount, txHash, "Peaje ASA Alta float", shop.airwallexAccountId));
+    if (!r.swept) return { ok: true, message: `Nothing to sweep: ${r.balance} USDZ on Alta, the agents keep ${policy.aiFloatTarget} for model calls.` };
+    return { ok: true, message: `Swept ${r.swept} USDZ from Alta to Airwallex. ${r.balance} USDZ stays for model calls.`, lines: [metalReady(metal) ? `Pulled on Alta testnet under the treasury mandate: ${r.txHash}. Airwallex can't receive USDZ, so the deposit on its side is simulated with this hash.` : `Bridge tx ${r.txHash} (fake bridge: Alta isn't set up)`] };
   });
 }
 
@@ -115,7 +117,7 @@ export async function resolveEscalationAction(_prev: ActionResult, form: FormDat
     const message = String(form.get("message") ?? "").trim() || undefined;
     const c = await deps(owner.shop.id).seller.resolveEscalation(id, decision, by, message);
     return decision === "approved" && c.payment
-      ? { ok: true, message: `Approved. The customer got a payment link for ${usd(c.quotes.find((q) => q.id === c.payment!.quoteId)?.total ?? 0)}.` }
+      ? { ok: true, message: `Approved. The customer got a payment link for ${usd(paymentQuotes(c).reduce((n, q) => n + q.total, 0))}.` }
       : { ok: true, message: decision === "approved" ? "Approved. The agent continues the conversation." : "Declined. The agent tells the customer and keeps selling." };
   });
 }
@@ -154,17 +156,11 @@ export async function acceptAdvanceAction(_prev: ActionResult, form: FormData): 
 export async function openAirwallexAccountAction(): Promise<ActionResult> {
   return guarded(async ({ shop }) => {
     if (shop.airwallexAccountId && shop.payTo) return { ok: true, message: `Your Airwallex account is already open (${shop.airwallexAccountId}).` };
-    const { awx } = deps(shop.id);
-    const file = join(root, "data/airwallex/sandbox-payees.json");
-    const accountId = shop.airwallexAccountId ?? (await openAccount(awx, sandboxKyc(shop.name, shop.ownerEmail, shop.about || `Products sold online by ${shop.name}`))).accountId;
-    shops().update(shop.id, { airwallexAccountId: accountId });
-    const supplier = await sandboxPayee(awx, file, "supplier", "Andes Green Coffee Imports", "Green coffee imports sold to roasters");
-    const owner = await sandboxPayee(awx, file, `owner:${shop.id}`, `${shop.name} owner`, "The shop owner's own account");
-    shops().update(shop.id, { payTo: { supplier, owner } });
+    const { accountId, payTo: { supplier, owner } } = await openShopAccount(shop.id);
     return {
       ok: true,
-      message: `Your Airwallex account is open and active (${accountId}). Sales move there at each close; inventory and profit go out of it.`,
-      lines: [`Inventory goes to ${supplier.accountName} (${supplier.accountNumber})`, `Profit goes to ${owner.accountName} (${owner.accountNumber})`],
+      message: `Your Airwallex account is open and active (${accountId}). Sales move there at each close; supplier bills and profit go out of it.`,
+      lines: [`Supplier bills go to ${supplier.accountName} (${supplier.accountNumber})`, `Profit goes to ${owner.accountName} (${owner.accountNumber})`],
     };
   });
 }

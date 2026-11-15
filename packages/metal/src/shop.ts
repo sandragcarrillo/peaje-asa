@@ -1,5 +1,5 @@
 /**
- * One Metal account per shop, owned by a key in the owner's browser, and one mandate per agent.
+ * One Alta account per shop, owned by a key in the owner's browser, and one mandate per agent.
  *
  *   <platform>/            providers.json, bridge.json, sponsor.json: the platform's payees and gas sponsor
  *   <shop>/issuer.json     signs the shop's mandate credentials (an off-chain document; it binds nothing)
@@ -17,7 +17,10 @@ import { bindCall, ingestCredential, parseCredential, type MandateCall, type Tru
 import type { MandatedAgent, OwnerPolicy } from "@peaje-asa/policy";
 import { getAddress, type Address, type Hex } from "viem";
 import { accountBalance, metalCli, AGENTS } from "./mandate.js";
-import { deployOwnerAccount, prepareOwnerCall, sponsorKey, submitOwnerCall, type PreparedOwnerCall } from "./owner.js";
+import { deployOwnerAccount, fundFromSponsor, prepareOwnerCall, sponsorKey, submitOwnerCall, type PreparedOwnerCall } from "./owner.js";
+
+/** What the platform sends a new shop's account when the faucet is busy: about 500 replies on the cheap model. */
+const STARTING_USDZ = 5;
 
 export interface AgentSetup { payees: string[]; description: string }
 
@@ -26,6 +29,13 @@ const DESCRIPTION: Record<MandatedAgent, string> = {
   seller: "Seller agent: model calls while selling",
   disputes: "Disputes agent: model calls to write chargeback defenses",
   treasury: "Treasury agent: sweeps the unused float to Airwallex",
+};
+
+/** What each mandate lets the agent do, in the owner's words. Amounts in USDZ, Alta's test dollar. */
+const PLAIN: Record<MandatedAgent, (cap: number, budget: number) => string> = {
+  seller: (cap, budget) => `Sales agent: pays for the AI that answers your customers. Up to ${cap.toFixed(2)} per reply, ${budget.toFixed(2)} in total over 30 days.`,
+  disputes: (cap, budget) => `Disputes agent: pays for the AI that answers chargebacks. Up to ${cap.toFixed(2)} per reply, ${budget.toFixed(2)} in total over 30 days.`,
+  treasury: (cap, budget) => `Treasury agent: moves money you don't need for AI back to your Airwallex account, and nowhere else. Up to ${cap.toFixed(2)} at a time, ${budget.toFixed(2)} in total over 30 days.`,
 };
 
 const readJson = async <T>(path: string) => JSON.parse(await readFile(path, "utf8")) as T;
@@ -83,11 +93,19 @@ export async function prepareShopSetup(o: { dir: string; platformDir: string; ow
   const { account, transaction } = await deployOwnerAccount(owner, sponsor);
   if (transaction) notes.push(`Account created: ${transaction}`);
 
-  // Testnet stand-in for the owner's deposit: the faucet grants USDZ once per address.
+  // Testnet stand-in for the owner's deposit: the faucet grants USDZ once per address. When it's
+  // busy (it rate-limits right after other accounts were made), the sponsor sends a starting balance.
   if ((await accountBalance(account)) < 1) {
     await metalCli(["fund", account]).then(
       (f) => notes.push(`Faucet: ${f.funded ?? "funded"}`),
-      (e) => notes.push(`The faucet didn't fund it yet (${(e as Error).message}). Your agents can't pay until it holds USDZ; try again in a minute.`),
+      async (e) => {
+        try {
+          const tx = await fundFromSponsor(account, STARTING_USDZ, sponsor);
+          notes.push(`Funded with ${STARTING_USDZ} USDZ by the platform: ${tx}`);
+        } catch (e2) {
+          notes.push(`Neither the faucet (${(e as Error).message}) nor the platform (${(e2 as Error).message}) could fund it yet. Your agents can't pay until it holds USDZ; try again in a minute.`);
+        }
+      },
     );
   }
 
@@ -104,7 +122,7 @@ export async function prepareShopSetup(o: { dir: string; platformDir: string; ow
     const status = await metalCli(["mandate", "status", "--credential", path]);
     if (status.bound === "yes") continue;
     calls.push(bindCall(await ingest(dir, path, account)));
-    summary.push(`Let the ${agent} agent pay ${agent === "treasury" ? "the Airwallex bridge" : "the three model providers"}: at most ${cap.toFixed(2)} USDZ per payment, ${budget.toFixed(2)} USDZ in all, for 30 days.`);
+    summary.push(PLAIN[agent](cap, budget));
   }
   if (!calls.length) {
     await writeFile(join(dir, "agents.json"), `${JSON.stringify({ principal: account, owner, agents: setup }, null, 2)}\n`);
@@ -131,7 +149,11 @@ export async function dropPending(dir: string) {
 export async function submitPending(o: { dir: string; platformDir: string; owner: Address; signature: Hex; kind: string; digest: Hex }) {
   const p = await pendingApproval(o.dir);
   if (!p || p.kind !== o.kind || p.digest !== o.digest) throw new Error("that approval is no longer waiting: start it again");
-  const transaction = await submitOwnerCall(p, getAddress(o.owner), o.signature, await sponsorKey(join(o.platformDir, "sponsor.json")));
+  // A batch that didn't go through is dropped, so starting again prepares a fresh one from what's on chain.
+  const transaction = await submitOwnerCall(p, getAddress(o.owner), o.signature, await sponsorKey(join(o.platformDir, "sponsor.json"))).catch(async (e) => {
+    await dropPending(o.dir);
+    throw e;
+  });
   await dropPending(o.dir);
   return { prepared: p, transaction };
 }

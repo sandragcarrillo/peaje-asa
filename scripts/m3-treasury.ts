@@ -7,7 +7,7 @@
  *    from a customer nobody answered, and a fraud claim on a sale the customer negotiated in the chat.
  * 3. The treasury accepts the small one, escalates the ignored customer, challenges the fraud claim with
  *    a PDF of the signed order and chat. The issuer rejects the evidence; the treasury defends again; we win.
- * 4. The unused AI float is swept from Metal to Airwallex (fake bridge until M5: simulated deposit, fake hash).
+ * 4. The unused AI float is swept from Alta to Airwallex (fake bridge until M5: simulated deposit, fake hash).
  * 5. The close: inventory and profit above the approval threshold wait for the owner, then go out as transfers.
  *
  * Owner approvals are given by this script and printed; in M4 they are buttons in the dashboard.
@@ -29,7 +29,7 @@ const treasury = new TreasuryStore();
 const now = () => new Date().toISOString();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const SHOP = "Tostadero Andino";
-/** USDZ the owner put on Metal for the agents' model calls (fake bridge until M5). */
+/** USDZ the owner put on Alta for the agents' model calls (fake bridge until M5). */
 const FLOAT_FUNDED = 20;
 
 // --- Seeded chats (what the seller agent would have produced) and what happened after the sale.
@@ -170,12 +170,12 @@ try {
     console.log("   Outcomes:", await syncDisputeOutcomes(disputeDeps));
   }
 
-  // --- 4. Metal float back to Airwallex
+  // --- 4. Alta float back to Airwallex
   const ga = (((await awx.globalAccountsOf(shopAccount.accountId)) as any).items ?? []).find((g: any) => g.status === "ACTIVE")?.id;
   const bridged = ledger.all().filter((e) => e.kind === "bridge_in").reduce((s, e) => s + (e as any).amount, 0);
   const bridge = new FakeMetalBridge(Math.round((FLOAT_FUNDED - ledger.pnl().aiCosts - bridged) * 100) / 100);
-  const sweep = await sweepFloat(bridge, ledger, policy, (amount, txHash) => awx.simulate.deposit(ga, amount, txHash, "Peaje ASA Metal float", shopAccount.accountId));
-  console.log(`4. Float sweep: ${sweep.swept} USDZ to Airwallex${"txHash" in sweep ? ` (${sweep.txHash}, fake until M5)` : ""}, ${sweep.balance} left on Metal`);
+  const sweep = await sweepFloat(bridge, ledger, policy, (amount, txHash) => awx.simulate.deposit(ga, amount, txHash, "Peaje ASA Alta float", shopAccount.accountId));
+  console.log(`4. Float sweep: ${sweep.swept} USDZ to Airwallex${"txHash" in sweep ? ` (${sweep.txHash}, fake until M5)` : ""}, ${sweep.balance} left on Alta`);
 
   // --- 5. The close
   const closeDeps = { ledger, store: treasury, policy, rails };

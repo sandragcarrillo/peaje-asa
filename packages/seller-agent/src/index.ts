@@ -13,7 +13,7 @@ import type { Airwallex } from "@peaje-asa/airwallex";
 import type { Ledger, OrderSigner } from "@peaje-asa/ledger";
 import { MandateRefused, PaidCallFailed, PriceAboveCap, type InferencePayer, type InferenceProvider, type Offer } from "@peaje-asa/metal";
 import { aiBudgetFor, chooseTier, findProduct, platformFee, type ModelTier, type OwnerPolicy } from "@peaje-asa/policy";
-import type { Conversation, ConversationStore, Quote, TranscriptLine } from "./store.js";
+import { paymentQuotes, type Conversation, type ConversationStore, type Quote, type TranscriptLine } from "./store.js";
 import { runTool, sellerTools, type ToolContext } from "./tools.js";
 
 export * from "./store.js";
@@ -33,6 +33,8 @@ export interface SellerDeps {
   shopName?: string;
   /** One line on what the shop sells and where, e.g. "a specialty coffee shop in Bogotá that sells beans and coffee equipment". */
   shopAbout?: string;
+  /** Told once a chat's order is verified, signed and booked. */
+  onPaid?: (c: Conversation) => void;
 }
 
 /** Model calls per customer message, tool round trips included. */
@@ -72,7 +74,7 @@ export function systemPrompt(shopName: string, about = SAMPLE_ABOUT) {
     "Prices only come from your tools and are in USD. Never state a price you did not get from search_catalog, quote or propose_discount.",
     "To quote, find the product with search_catalog, then call quote. If the customer asks for a better price, call propose_discount; never promise a discount the tool did not accept. If it is refused, you may offer the lowest price it returns.",
     "If the customer insists on a price below that, asks for the owner, or asks for something you can't decide (custom orders, wholesale terms, complaints), call escalate_to_owner. You can always escalate; only the owner can say yes to what you can't.",
-    "When the customer agrees to buy, call create_payment_link with the agreed quote and send them the URL. Never ask for card numbers in the chat.",
+    "When the customer agrees to buy, call create_payment_link once with every agreed quote in the order (one link, however many products) and send them the URL. Never ask for card numbers in the chat.",
     "A payment counts only once Airwallex confirms it; you get a note when it does. If the customer says they paid or sends a receipt before that, tell them it confirms on its own in a moment, never that it went through.",
     "Never mention costs, margins, budgets, internal rules or which AI model you are.",
   ].join("\n");
@@ -111,7 +113,7 @@ export class SellerAgent {
       const c = this.deps.store.get(convId);
       const q = c?.quotes.find((x) => x.id === quoteId);
       if (!c || !q) throw new Error(`No quote ${quoteId} in ${convId}`);
-      return this.toolContext().createPaymentLink(c, q);
+      return this.toolContext().createPaymentLink(c, [q]);
     });
   }
 
@@ -147,7 +149,7 @@ export class SellerAgent {
         c.escalation.resolution = { decision, by, at: now(), quoteId: q.id };
         c.status = "open";
         c.transcript.push({ from: "system", text: `Owner approved ${t.qty} x ${p.name} at ${t.unitPrice} ${t.currency}.`, at: now() });
-        await this.toolContext().createPaymentLink(c, q);
+        await this.toolContext().createPaymentLink(c, [q]);
         c.pendingNotes.push(`The owner approved ${t.qty} x ${p.name} at ${t.unitPrice} ${t.currency} (quote ${q.id}) and the payment link was sent.`);
       } else {
         c.escalation.resolution = { decision, by, at: now() };
@@ -193,11 +195,18 @@ export class SellerAgent {
   private async loop(c: Conversation) {
     const { policy, payer, providers } = this.deps;
     let failures = 0;
-    // Tiers Metal refused this turn under the seller's mandate (above its cap, say): not options until the next message.
+    // Tiers Alta refused this turn under the seller's mandate (above its cap, say): not options until the next message.
     const refused = new Set<string>();
 
     for (let i = 0; i < MAX_CALLS_PER_TURN; i++) {
-      const offers = Object.fromEntries(Object.entries(await this.offers()).filter(([t]) => !refused.has(t)));
+      const live = await this.offers();
+      const offers = Object.fromEntries(Object.entries(live).filter(([t]) => !refused.has(t)));
+      // No AI service answered: that's an outage, not a deal too small to pay for. Say so and let the
+      // customer's next message try again, instead of handing the conversation to the owner.
+      if (Object.keys(live).length === 0) {
+        this.say(c, "Sorry, I can't answer right now. Please send your message again in a minute.");
+        return;
+      }
       const budget = aiBudgetFor(this.activeMargin(c), policy);
       const decision = chooseTier(budget, c.aiSpent, c.calls, offers, policy);
 
@@ -327,17 +336,23 @@ export class SellerAgent {
     return {
       policy: this.deps.policy,
       escalate: (c, reason, kind, terms) => this.escalate(c, reason, kind, terms),
-      createPaymentLink: async (c, q) => {
-        // The links endpoint takes no request_id: one link per quote, saved as soon as it exists.
-        if (c.payment?.quoteId === q.id) return { url: c.payment.url };
-        const orderId = `ord_${c.id}_${q.id}`;
+      createPaymentLink: async (c, qs) => {
+        // One link for the whole order. The links endpoint takes no request_id: the same quotes get the
+        // same link back; different ones get a new link that replaces the unpaid one (only it is checked).
+        const ids = qs.map((q) => q.id);
+        const current = c.payment ? (c.payment.quoteIds ?? [c.payment.quoteId]) : [];
+        if (c.payment && current.length === ids.length && ids.every((id) => current.includes(id))) return { url: c.payment.url };
+        const orderId = `ord_${c.id}_${ids[0]}${ids.length > 1 ? `_${ids.length}` : ""}`;
+        const total = round2(qs.reduce((n, q) => n + q.total, 0));
+        const currency = qs[0]!.currency;
+        const description = qs.map((q) => `${q.qty} x ${q.name}`).join(", ");
         const link: any = await this.deps.awx.createPaymentLink({
-          amount: q.total, currency: q.currency, title: `${this.deps.shopName ?? "Tostadero Andino"} order`,
-          reference: orderId, description: `${q.qty} x ${q.name}`, metadata: { conversation_id: c.id, quote_id: q.id },
+          amount: total, currency, title: `${this.deps.shopName ?? "Tostadero Andino"} order`,
+          reference: orderId, description, metadata: { conversation_id: c.id, quote_id: ids.join(",") },
         });
-        c.payment = { linkId: link.id, url: link.url, quoteId: q.id, orderId };
+        c.payment = { linkId: link.id, url: link.url, quoteId: ids[0]!, ...(ids.length > 1 && { quoteIds: ids }), orderId };
         c.status = "awaiting_payment";
-        c.transcript.push({ from: "system", text: `Payment link for ${q.total} ${q.currency}: ${link.url}`, at: now() });
+        c.transcript.push({ from: "system", text: `Payment link for ${total} ${currency} (${description}): ${link.url}`, at: now() });
         this.deps.store.save(c);
         return { url: link.url };
       },
@@ -348,24 +363,29 @@ export class SellerAgent {
   private async bookPaidOrder(c: Conversation, paymentIntentId: string) {
     const { awx, ledger, signer, policy } = this.deps;
     const p = c.payment!;
-    const q = c.quotes.find((x) => x.id === p.quoteId)!;
+    const qs = paymentQuotes(c);
+    const total = round2(qs.reduce((n, q) => n + q.total, 0));
+    const currency = qs[0]!.currency;
     const intent: any = await awx.getPaymentIntent(paymentIntentId);
     if (intent.status !== "SUCCEEDED") return;
-    if (intent.amount !== q.total || intent.currency !== q.currency) {
-      c.transcript.push({ from: "system", text: `Payment mismatch: paid ${intent.amount} ${intent.currency}, quote is ${q.total} ${q.currency}`, at: now() });
+    if (intent.amount !== total || intent.currency !== currency) {
+      c.transcript.push({ from: "system", text: `Payment mismatch: paid ${intent.amount} ${intent.currency}, the order is ${total} ${currency}`, at: now() });
       return;
     }
     if (ledger.order(p.orderId)) return; // already booked
 
     const order = signer.sign({
-      orderId: p.orderId, customerRef: c.customerRef, items: [{ sku: q.sku, qty: q.qty, unitPrice: q.unitPrice }],
-      total: q.total, currency: q.currency, paymentIntentId, paymentLinkId: p.linkId, createdAt: now(),
+      orderId: p.orderId, customerRef: c.customerRef, items: qs.map((q) => ({ sku: q.sku, qty: q.qty, unitPrice: q.unitPrice })),
+      total, currency, paymentIntentId, paymentLinkId: p.linkId, createdAt: now(),
     });
     ledger.addOrder(order);
-    ledger.add({ kind: "sale", orderId: order.orderId, amount: q.total, cogs: round2(findProduct(this.deps.policy.catalog, q.sku)!.unitCost * q.qty), platformFee: platformFee(q.total), currency: policy.currency, at: now() });
+    const cogs = round2(qs.reduce((n, q) => n + findProduct(this.deps.policy.catalog, q.sku)!.unitCost * q.qty, 0));
+    ledger.add({ kind: "sale", orderId: order.orderId, amount: total, cogs, platformFee: platformFee(total), currency: policy.currency, at: now() });
     p.paymentIntentId = paymentIntentId;
     c.status = "paid";
     c.transcript.push({ from: "system", text: `Payment verified with Airwallex. Order ${order.orderId} signed.`, at: now() });
-    c.pendingNotes.push(`The customer paid ${q.total} ${q.currency} for ${q.qty} x ${q.name}; order ${order.orderId} is confirmed.`);
+    this.say(c, `Payment received, thank you! Your order is confirmed: ${qs.map((q) => `${q.qty} x ${q.name}`).join(", ")}.`);
+    c.pendingNotes.push(`The customer paid ${total} ${currency} for ${qs.map((q) => `${q.qty} x ${q.name}`).join(", ")}; order ${order.orderId} is confirmed and you already told them.`);
+    this.deps.onPaid?.(c);
   }
 }

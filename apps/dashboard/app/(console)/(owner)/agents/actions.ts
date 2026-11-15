@@ -6,11 +6,13 @@
  * sends it, but only after the owner's key, which never leaves their browser, signed it.
  */
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { finishShopSetup, payerFor, prepareShopSetup, type PreparedOwnerCall } from "@peaje-asa/metal";
 import { finishRebalance, prepareRebalance } from "@peaje-asa/treasury-agent";
 import { getAddress, isAddress, isAddressEqual, isHex, type Hex } from "viem";
 import { requireOwner } from "@/lib/auth";
 import { deps } from "@/lib/deps";
+import { startDemoChats } from "@/lib/demo-history";
 import { errorText } from "@/lib/format";
 import { metalDirFor, platformMetalDir, policyOf, shops } from "@/lib/shops";
 
@@ -70,6 +72,8 @@ export async function approveAction(kind: string, digest: string, signature: str
   return step(async () => {
     if (kind === "setup") {
       const r = await finishShopSetup(o);
+      // A demo shop's first customers write in as soon as its agents can pay for their AI.
+      if (shop.demo) after(() => startDemoChats(shop.id));
       return { ok: true, message: "Done. Your agents can pay for their model calls now, each within the mandate you signed.", lines: [`Transaction ${r.transaction}`], account: r.account };
     }
     if (kind === "rebalance") {

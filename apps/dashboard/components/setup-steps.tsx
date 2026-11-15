@@ -47,9 +47,9 @@ export async function SetupSteps({ shop }: { shop: Shop }) {
 
         <Step n={2} title="Give your agent a wallet" done={s.wallet}>
           <p className="text-sm text-muted">
-            Your agent pays for its own AI replies (a few cents each) from a wallet on Metal&apos;s test network. You set how much it can spend, and nothing moves without your approval.
+            Your agent pays for its own AI replies (a few cents each) from a wallet on Alta&apos;s test network. You set how much it can spend, and nothing moves without your approval.
           </p>
-          {s.wallet ? null : <MetalSetup shopId={shop.id} metalOwner={shop.metalOwner} pending={pending} />}
+          {s.wallet ? null : <MetalSetup shopId={shop.id} metalOwner={shop.metalOwner} pending={pending} auto={shop.demo} />}
         </Step>
 
         <Step n={3} title="Try your shop's chat" done={false}>
@@ -62,8 +62,8 @@ export async function SetupSteps({ shop }: { shop: Shop }) {
         <Step n={4} title="Open your Airwallex account" done={s.account}>
           <p className="text-sm text-muted">
             {s.account
-              ? `Account ${shop.airwallexAccountId}. Sales move there at each close; inventory and your profit are paid out of it.`
-              : "Where your sales land, and where inventory and your profit are paid from. In the sandbox Airwallex's review is simulated with sample company details."}
+              ? `Account ${shop.airwallexAccountId}. Sales move there at each close; supplier bills and your profit are paid out of it.`
+              : "Where your sales land, and where supplier bills and your profit are paid from. In the sandbox Airwallex's review is simulated with sample company details."}
           </p>
           {s.account ? null : <div className="max-w-xs"><ActionForm action={openAirwallexAccountAction} label="Open my Airwallex account" pendingLabel="Opening (about 30 s)..." small /></div>}
         </Step>

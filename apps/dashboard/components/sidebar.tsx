@@ -29,7 +29,7 @@ export function Sidebar({ shop, id, items, chatUrl }: { shop: string; id: string
                 key={item.href}
                 href={item.href}
                 className={`flex items-center justify-between py-2 pr-3 pl-3 transition-colors ${
-                  activo ? "border-l-2 border-accent bg-panel-2 font-bold text-text" : "border-l-2 border-transparent text-muted hover:bg-panel-2 hover:text-text"
+                  activo ? "bg-panel-2 font-bold text-text" : "text-muted hover:bg-panel-2 hover:text-text"
                 }`}
               >
                 <span className="flex items-center gap-2.5">
@@ -44,7 +44,7 @@ export function Sidebar({ shop, id, items, chatUrl }: { shop: string; id: string
       </div>
       <div className="space-y-3 border-t border-border pt-4">
         <a href={chatUrl} target="_blank" rel="noreferrer" className="btn btn-secundario btn-chico btn-ancho">Open the shop chat</a>
-        <p className="px-3 font-mono text-[10px] text-muted">Airwallex sandbox · Metal testnet</p>
+        <p className="px-3 font-mono text-[10px] text-muted">Airwallex sandbox · Alta testnet</p>
       </div>
     </aside>
   );

@@ -19,7 +19,7 @@
   // Draw nothing on a website the shop hasn't listed: its chat wouldn't load there anyway.
   fetch(`${origin}/api/s/${encodeURIComponent(shop)}/widget`)
     .then((r) => r.json())
-    .then(({ allowed }) => allowed ? mount() : console.warn(`Peaje ASA: ${location.origin} isn't on the websites for "${shop}". Add it in the back office, Website chat.`))
+    .then(({ allowed }) => allowed ? mount() : console.warn(`Peaje ASA: ${location.origin} isn't on the websites for "${shop}". Add it in the back office, Plugin.`))
     .catch(() => {});
 
   function mount() {

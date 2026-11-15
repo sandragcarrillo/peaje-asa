@@ -1,6 +1,6 @@
 /**
- * Real Metal testnet: one owner account, one mandate per agent (Kit 11), inference bought over
- * x402 under that mandate (Kit 12). Metal enforces each mandate on chain: payees, the most per
+ * Real Alta testnet: one owner account, one mandate per agent (Kit 11), inference bought over
+ * x402 under that mandate (Kit 12). Alta enforces each mandate on chain: payees, the most per
  * payment, the budget. A payment outside it is refused at settlement and moves nothing.
  *
  * Files live in data/metal/ (written by `npm run metal:setup`):
@@ -34,7 +34,7 @@ import { FakeInferencePayer, PaidCallFailed, PriceAboveCap, type InferencePayer,
 export type AgentName = "seller" | "disputes" | "treasury";
 export const AGENTS: readonly AgentName[] = ["seller", "disputes", "treasury"];
 
-/** Metal refused the payment under the agent's mandate. Nothing moved. */
+/** Alta refused the payment under the agent's mandate. Nothing moved. */
 export class MandateRefused extends Error {
   constructor(public provider: string, public reason: string) {
     super(`mandate_refused: ${provider}: ${reason}`);
@@ -105,7 +105,7 @@ async function readOffer(p: InferenceProvider): Promise<Offer> {
 /**
  * Pays providers from the owner's account under one agent's mandate. Same contract as the fake:
  * PriceAboveCap before anything is signed, PaidCallFailed when it was paid but no answer came back,
- * plus MandateRefused when Metal says no.
+ * plus MandateRefused when Alta says no.
  */
 export class MandatePayer implements InferencePayer {
   private client?: ReturnType<typeof createMandatePaymentClient>;
@@ -180,11 +180,11 @@ export class MandateBridge implements MetalBridge {
   }
 }
 
-/** Where setup keeps the Metal files: METAL_DIR, else <repo>/data/metal. */
+/** Where setup keeps the Alta files: METAL_DIR, else <repo>/data/metal. */
 export const metalDir = (root: string) => process.env.METAL_DIR ?? join(root, "data/metal");
 
-/** Real Metal needs an endpoint and a finished setup; otherwise everything runs on the fakes. */
+/** Real Alta needs an endpoint and a finished setup; otherwise everything runs on the fakes. */
 export const metalReady = (dir: string) => Boolean(process.env.METAL_RPC_URL) && existsSync(join(dir, "agents.json"));
 
-/** The agent's payer: under its own mandate on Metal when set up, the fake otherwise. */
+/** The agent's payer: under its own mandate on Alta when set up, the fake otherwise. */
 export const payerFor = (agent: AgentName, dir: string): InferencePayer => (metalReady(dir) ? new MandatePayer(dir, agent) : new FakeInferencePayer());
