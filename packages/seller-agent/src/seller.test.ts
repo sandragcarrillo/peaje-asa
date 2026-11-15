@@ -117,7 +117,14 @@ test("a premium deal gets the premium tier; a price rise reroutes, then escalate
 
   payer.prices.mid = { price: 0.5, latencyMs: 200 };
   payer.prices.cheap = { price: 0.5, latencyMs: 300 };
-  const lines = await agent.handleMessage("c2", "And the warranty?");
+  // Out of AI budget on a quote the agent may give: the customer gets the link, no model call.
+  const close = await agent.handleMessage("c2", "And the warranty?");
+  assert.equal(store.get("c2")!.status, "awaiting_payment");
+  assert.match(close.at(-1)!.text, /Pay here: \S+/);
+  assert.equal(payer.used.length, 3, "the link went out without a model call");
+
+  // Still out of budget after the link: now the owner takes it.
+  const lines = await agent.handleMessage("c2", "Does it come with a grinder?");
   const c = store.get("c2")!;
   assert.equal(c.status, "escalated");
   assert.equal(c.escalation?.kind, "unprofitable");

@@ -12,7 +12,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { Airwallex } from "@peaje-asa/airwallex";
 import type { Ledger, OrderSigner } from "@peaje-asa/ledger";
 import { MandateRefused, PaidCallFailed, PriceAboveCap, type InferencePayer, type InferenceProvider, type Offer } from "@peaje-asa/metal";
-import { aiBudgetFor, chooseTier, findProduct, platformFee, type ModelTier, type OwnerPolicy } from "@peaje-asa/policy";
+import { aiBudgetFor, chooseTier, findProduct, lowestAutoPrice, platformFee, type ModelTier, type OwnerPolicy } from "@peaje-asa/policy";
 import { paymentQuotes, type Conversation, type ConversationStore, type Quote, type TranscriptLine } from "./store.js";
 import { runTool, sellerTools, type ToolContext } from "./tools.js";
 
@@ -211,6 +211,8 @@ export class SellerAgent {
       const decision = chooseTier(budget, c.aiSpent, c.calls, offers, policy);
 
       if (decision.action === "escalate") {
+        // A small deal at a price the agent may give: close it with the link, no more AI and no owner needed.
+        if (await this.closeWithoutAi(c)) return;
         this.escalate(c, "This conversation would cost more in AI than the deal can earn.", "unprofitable", this.activeTerms(c), budget);
         this.say(c, fixedReply(c, "escalated"));
         return;
@@ -285,6 +287,24 @@ export class SellerAgent {
   }
 
   /** Margin of the deal on the table, or undefined while we don't know what they want. */
+  /**
+   * When the AI budget runs out on a quote the agent was allowed to make, the customer still gets to
+   * buy: the payment link goes out as a fixed message. Only once per quote; after that, the owner.
+   */
+  private async closeWithoutAi(c: Conversation): Promise<boolean> {
+    const q = this.activeQuote(c);
+    if (!q || c.status !== "open" || c.payment) return false;
+    const p = findProduct(this.deps.policy.catalog, q.sku);
+    if (!p || q.unitPrice < lowestAutoPrice(p.listPrice, p.unitCost, this.deps.policy)) return false;
+    const { url } = await this.toolContext().createPaymentLink(c, [q]);
+    const es = looksSpanish(c.transcript.filter((l) => l.from === "customer").slice(-3).map((l) => l.text).join(" "));
+    this.say(c, es
+      ? `Listo: ${q.qty} x ${q.name}, ${q.total} ${q.currency}. Paga aquí: ${url}`
+      : `Here you go: ${q.qty} x ${q.name}, ${q.total} ${q.currency}. Pay here: ${url}`);
+    c.pendingNotes.push(`You sent the payment link for ${q.qty} x ${q.name} (${q.total} ${q.currency}).`);
+    return true;
+  }
+
   private activeMargin(c: Conversation): number | undefined {
     const q = this.activeQuote(c);
     if (!q) return undefined;
