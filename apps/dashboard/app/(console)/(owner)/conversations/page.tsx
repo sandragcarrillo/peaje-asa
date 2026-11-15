@@ -6,42 +6,51 @@ import { deps } from "@/lib/deps";
 import { requireOwner } from "@/lib/auth";
 import { money } from "@/lib/format";
 
-export default async function Conversations() {
+export default async function Conversations({ searchParams }: { searchParams: Promise<{ show?: string }> }) {
   const { shop } = await requireOwner();
+  const { show } = await searchParams;
+  // Newest first, so the chat that just happened is on top. The cards above filter the list.
   const list = deps(shop.id).conversations.list()
     .map((c) => ({ c, last: c.transcript.at(-1), state: conversationState(c) }))
-    .sort((a, b) => Number(b.state.forOwner) - Number(a.state.forOwner) || (b.last?.at ?? b.c.createdAt).localeCompare(a.last?.at ?? a.c.createdAt));
+    .sort((a, b) => (b.last?.at ?? b.c.createdAt).localeCompare(a.last?.at ?? a.c.createdAt));
 
   const count = (label: string) => list.filter((x) => x.state.label === label).length;
   const summary = [
-    { label: "Waiting for you", value: count("Waiting for you"), hint: "The agent needs your yes or no", alert: true },
-    { label: "Payment link sent", value: count("Payment link sent"), hint: "The customer can pay now" },
-    { label: "Paid", value: count("Paid"), hint: "Confirmed by Airwallex" },
-    { label: "All chats", value: list.length, hint: "Every customer so far" },
+    { key: "waiting", label: "Waiting for you", value: count("Waiting for you"), hint: "The agent needs your yes or no", alert: true },
+    { key: "link", label: "Payment link sent", value: count("Payment link sent"), hint: "The customer can pay now" },
+    { key: "paid", label: "Paid", value: count("Paid"), hint: "Confirmed by Airwallex" },
+    { key: "", label: "All chats", value: list.length, hint: "Every customer so far" },
   ];
+  const active = summary.find((s) => s.key && s.key === show);
+  const shown = active ? list.filter((x) => x.state.label === active.label) : list;
 
   return (
     <section className="space-y-8">
       <PageHead
         eyebrow="Your sales agent"
         title="Conversations"
-        sub="Every chat your AI sales agent had with a customer. It answers questions, offers prices inside your rules and sends a payment link. When a customer asks for something it can't decide, that chat moves to the top and waits for you."
+        sub="Every chat your AI sales agent had with a customer. It answers questions, offers prices inside your rules and sends a payment link. When a customer asks for something it can't decide, the chat waits for your answer. Newest chats first; tap a box to see only those."
       />
 
       {list.length ? (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {summary.map((s) => (
-              <div key={s.label} className={`rounded-lg border bg-panel p-4 ${s.alert && s.value ? "border-red-500/50" : "border-border"}`}>
-                <p className="text-2xl font-bold tabular-nums">{s.value}</p>
-                <p className="text-sm font-medium">{s.label}</p>
-                <p className="text-xs text-muted">{s.hint}</p>
-              </div>
-            ))}
+            {summary.map((s) => {
+              const on = (active?.key ?? "") === s.key;
+              return (
+                <Link key={s.label} href={s.key ? `/conversations?show=${s.key}` : "/conversations"} aria-current={on ? "true" : undefined}
+                  className={`rounded-lg border p-4 transition-colors hover:bg-panel-2 ${on ? "bg-panel-2 ring-1 ring-accent" : "bg-panel"} ${s.alert && s.value ? "border-red-500/50" : "border-border"}`}>
+                  <p className="text-2xl font-bold tabular-nums">{s.value}</p>
+                  <p className="text-sm font-medium">{s.label}</p>
+                  <p className="text-xs text-muted">{s.hint}</p>
+                </Link>
+              );
+            })}
           </div>
 
+          {shown.length === 0 ? <p className="text-sm text-muted">No chats here right now. <Link href="/conversations" className="underline">See all chats</Link>.</p> : null}
           <ul className="space-y-2">
-            {list.map(({ c, last, state }) => {
+            {shown.map(({ c, last, state }) => {
               const order = orderOf(c);
               const preview = last ? (last.from === "system" ? systemLine(last.text).text : `${SPEAKER[last.from]}: ${last.text}`) : "No messages yet";
               return (

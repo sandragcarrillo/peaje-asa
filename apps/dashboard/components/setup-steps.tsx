@@ -21,8 +21,8 @@ function Step({ n, title, done, children }: { n: number; title: string; done: bo
 
 /**
  * The first thing a new owner sees: four steps in order, each with its action right there.
- * Buyers can chat once the shop has products and its agent's wallet; the Airwallex account is
- * where sales are paid out to.
+ * Products, the agent's wallet and the Airwallex account where the money lands come first; trying
+ * the chat as a buyer is the last step.
  */
 export async function SetupSteps({ shop }: { shop: Shop }) {
   const s = setupOf(shop);
@@ -33,7 +33,7 @@ export async function SetupSteps({ shop }: { shop: Shop }) {
     <div className="border border-accent bg-panel">
       <div className="space-y-1 border-b border-border px-5 py-4">
         <h2 className="text-lg font-semibold">Get your shop ready</h2>
-        <p className="text-sm text-muted">{left === 0 ? "All set." : `${left} ${left === 1 ? "step" : "steps"} left. Buyers can chat with your shop after steps 1 and 2.`}</p>
+        <p className="text-sm text-muted">{left === 0 ? "All set." : `${left} ${left === 1 ? "step" : "steps"} left. Then try your shop's chat as a buyer.`}</p>
       </div>
       <ol>
         <Step n={1} title="Put products on sale" done={s.products > 0}>
@@ -52,20 +52,19 @@ export async function SetupSteps({ shop }: { shop: Shop }) {
           {s.wallet ? null : <MetalSetup shopId={shop.id} metalOwner={shop.metalOwner} pending={pending} auto={shop.demo} />}
         </Step>
 
-        <Step n={3} title="Try your shop's chat" done={false}>
-          <p className="text-sm text-muted">
-            {s.canSell ? "Open the chat your buyers see and ask for something. Your agent answers, quotes within your rules and sends a payment link." : "Available after steps 1 and 2."}
-          </p>
-          {s.canSell ? <a href={`/s/${shop.id}`} target="_blank" rel="noreferrer" className="btn btn-primario btn-chico">Open the chat</a> : null}
-        </Step>
-
-        <Step n={4} title="Open your Airwallex account" done={s.account}>
+        <Step n={3} title="Open your Airwallex account" done={s.account}>
           <p className="text-sm text-muted">
             {s.account
               ? `Account ${shop.airwallexAccountId}. Sales move there at each close; supplier bills and your profit are paid out of it.`
               : "Where your sales land, and where supplier bills and your profit are paid from. In the sandbox Airwallex's review is simulated with sample company details."}
           </p>
           {s.account ? null : <div className="max-w-xs"><ActionForm action={openAirwallexAccountAction} label="Open my Airwallex account" pendingLabel="Opening (about 30 s)..." small /></div>}
+        </Step>
+        <Step n={4} title="Try your shop's chat" done={false}>
+          <p className="text-sm text-muted">
+            {s.done ? "Open the chat your buyers see and ask for something. Your agent answers, quotes within your rules and sends a payment link. Pay it with the test card 4035 5010 0000 0008 and the sale lands in your Airwallex account." : "Available after steps 1 to 3: the agent needs products to sell, a wallet for its AI replies and your Airwallex account for the money."}
+          </p>
+          {s.done ? <a href={`/s/${shop.id}`} target="_blank" rel="noreferrer" className="btn btn-primario btn-chico">Open the chat</a> : null}
         </Step>
       </ol>
     </div>
