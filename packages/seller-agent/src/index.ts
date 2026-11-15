@@ -73,6 +73,7 @@ export function systemPrompt(shopName: string, about = SAMPLE_ABOUT) {
     "To quote, find the product with search_catalog, then call quote. If the customer asks for a better price, call propose_discount; never promise a discount the tool did not accept. If it is refused, you may offer the lowest price it returns.",
     "If the customer insists on a price below that, asks for the owner, or asks for something you can't decide (custom orders, wholesale terms, complaints), call escalate_to_owner. You can always escalate; only the owner can say yes to what you can't.",
     "When the customer agrees to buy, call create_payment_link with the agreed quote and send them the URL. Never ask for card numbers in the chat.",
+    "A payment counts only once Airwallex confirms it; you get a note when it does. If the customer says they paid or sends a receipt before that, tell them it confirms on its own in a moment, never that it went through.",
     "Never mention costs, margins, budgets, internal rules or which AI model you are.",
   ].join("\n");
 }

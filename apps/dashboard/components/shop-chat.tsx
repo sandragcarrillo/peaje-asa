@@ -21,7 +21,7 @@ function Linkified({ text }: { text: string }) {
 }
 
 /** The customer side of a shop: a chat with its seller agent. The server makes the conversation id on the first message; it then lives in the URL (?c=). */
-export function ShopChat({ shop, ready }: { shop: { id: string; name: string; about: string }; ready: boolean }) {
+export function ShopChat({ shop, ready, embedded = false }: { shop: { id: string; name: string; about: string }; ready: boolean; embedded?: boolean }) {
   const base = `/api/s/${encodeURIComponent(shop.id)}`;
   const [id, setId] = useState<string>();
   const [conv, setConv] = useState<View>();
@@ -31,18 +31,25 @@ export function ShopChat({ shop, ready }: { shop: { id: string; name: string; ab
   const [error, setError] = useState<string>();
   const feed = useRef<HTMLDivElement>(null);
 
-  // The conversation id lives in the URL (?c=) so the customer can reopen the chat.
+  // The conversation id lives in the URL (?c=) so the customer can reopen the chat. Inside a shop's
+  // website the frame's URL isn't the customer's, so the widget keeps it in this browser instead.
+  const key = `asa-chat:${shop.id}`;
   useEffect(() => {
-    setId(new URL(window.location.href).searchParams.get("c") ?? undefined);
-  }, []);
+    if (!embedded) return setId(new URL(window.location.href).searchParams.get("c") ?? undefined);
+    try { setId(localStorage.getItem(key) ?? undefined); } catch { /* storage blocked: a new chat each visit */ }
+  }, [embedded, key]);
 
   const remember = useCallback((c: string | undefined) => {
-    const url = new URL(window.location.href);
-    if (c) url.searchParams.set("c", c);
-    else url.searchParams.delete("c");
-    window.history.replaceState(null, "", url);
+    if (embedded) {
+      try { if (c) localStorage.setItem(key, c); else localStorage.removeItem(key); } catch { /* storage blocked */ }
+    } else {
+      const url = new URL(window.location.href);
+      if (c) url.searchParams.set("c", c);
+      else url.searchParams.delete("c");
+      window.history.replaceState(null, "", url);
+    }
     setId(c);
-  }, []);
+  }, [embedded, key]);
 
   const refresh = useCallback(async () => {
     if (!id) return;
@@ -98,7 +105,7 @@ export function ShopChat({ shop, ready }: { shop: { id: string; name: string; ab
   const status = !ready ? "opening soon" : busy ? "typing..." : conv?.status === "escalated" ? "the owner will reply" : "online";
 
   return (
-    <div className="chat-app"><main className="phone">
+    <div className={embedded ? "chat-app embedded" : "chat-app"}><main className="phone">
       <header className="header">
         <div className="avatar">{shop.name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase()}</div>
         <div className="who">

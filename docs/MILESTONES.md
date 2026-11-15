@@ -17,7 +17,8 @@ Submission: working demo, video under 5 min, repo with setup instructions.
     - [x] Kit 10 storefront: catalogue, signed checkout, OAuth, webhook booking; deployed at asa.usepeaje.com (Nov 13), purchase through the Airwallex MCP still to test.
     - [x] Metal: x402 route per item with signed order required, verifyMandatePayment, sale booked; buyer script; cap refusal tested on testnet (Nov 13).
     - [ ] Visa TAP: out unless we get access.
-  - [ ] M6d Widget: `<script data-shop>` bubble + iframe `/embed/[shop]`, frame-ancestors per shop. Only the Airwallex webhook proves a payment: a screenshot never marks an order paid.
+  - [x] M6d Widget: `<script data-shop>` bubble + iframe `/embed/[shop]`, frame-ancestors per shop. Only the Airwallex webhook proves a payment: a screenshot never marks an order paid.
+    - Nov 14, done: `public/widget.js` (one script line, button in a shadow root, frame loads on first open) and `/embed/<shop>` (same chat, conversation id kept in the frame's localStorage). The owner lists their websites in Website chat; `proxy.ts` sends `frame-ancestors` with that list, every other page sends `frame-ancestors 'none'`, and the widget asks `/api/s/<shop>/widget` first so an unlisted site gets no button. The Airwallex webhook now books chat sales too (intent `payment_link_id` → link metadata `conversation_id` → `checkPayment`), so a sale no longer waits for the buyer to keep the chat open. Tested locally from a second origin; the webhook path for chat links is untested until a real payment.
   - [ ] M6e Deploy (Railway) + judge mode: "Try it" creates a fresh demo shop and opens a split view, the shop's chat on one side (the judge pays with the test card) and its live back office on the other.
 - [ ] M7 Polish + submit (Sat Nov 14 - Sun Nov 15): README setup tested from a clean clone, architecture diagram, demo video script, video, submission
 

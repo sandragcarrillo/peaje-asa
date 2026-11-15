@@ -20,6 +20,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
     { href: "/approvals", label: "Approvals", valor: approvals ? String(approvals) : undefined, acento: approvals > 0 },
     { href: "/disputes", label: "Disputes", valor: openDisputes ? `${openDisputes} open` : undefined },
     { href: "/catalog", label: "Catalog", valor: policy.catalog.some((p) => !p.archived) ? undefined : "empty", acento: !policy.catalog.some((p) => !p.archived) },
+    { href: "/website", label: "Website chat", valor: shop.embedOrigins?.length ? undefined : "off" },
     { href: "/agents", label: "Agents" },
     { href: "/advance", label: "Advance", valor: offer.amount > 0 ? money(offer.amount) : undefined, acento: offer.amount > 0 },
   ];

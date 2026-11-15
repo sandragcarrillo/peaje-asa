@@ -17,6 +17,8 @@ export interface Shop {
   passwordHash: string;
   policy: OwnerPolicy;
   createdAt: string;
+  /** Websites allowed to show the shop's chat widget (origins, e.g. https://shop.example). */
+  embedOrigins?: string[];
   /** A judge's throwaway shop from "Try it". */
   demo?: boolean;
   /** The address of the owner key made in the owner's browser. Set once: it owns the shop's Metal account. */
@@ -71,7 +73,7 @@ export class ShopStore {
   }
 
   /** Name, about, rules and catalog can change; the id and the owner's email can't. */
-  update(id: string, patch: Partial<Pick<Shop, "name" | "about" | "policy" | "airwallexAccountId" | "payTo" | "passwordHash" | "metalOwner">>): Shop {
+  update(id: string, patch: Partial<Pick<Shop, "name" | "about" | "policy" | "airwallexAccountId" | "payTo" | "passwordHash" | "metalOwner" | "embedOrigins">>): Shop {
     const s = this.get(id);
     if (!s) throw new Error(`No shop ${id}`);
     const next = { ...s, ...patch };
