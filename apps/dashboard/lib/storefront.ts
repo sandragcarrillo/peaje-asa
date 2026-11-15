@@ -54,7 +54,8 @@ const awx = () => ((globalThis as unknown as { asaAwx?: Airwallex }).asaAwx ??= 
  */
 export function syncCatalog(shopId: string) {
   if (!process.env.PUBLIC_URL?.startsWith("https://") || !process.env.AGENTIC_CHECKOUT_SECRET) return;
-  after(async () => {
+  // Inside a request it runs after the response; outside one (the demo pool, at server start) right away.
+  const run = async () => {
     const s = listing(shopId);
     if (!s || s.policy.catalog.length === 0) return;
     try {
@@ -63,5 +64,10 @@ export function syncCatalog(shopId: string) {
     } catch (e) {
       console.warn(`kit10 sync ${shopId}: ${e instanceof Error ? e.message.slice(0, 300) : String(e)}`);
     }
-  });
+  };
+  try {
+    after(run);
+  } catch {
+    void run();
+  }
 }
