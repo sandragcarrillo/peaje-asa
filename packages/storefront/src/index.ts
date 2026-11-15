@@ -31,7 +31,7 @@ export interface ShopListing { id: string; name: string; about?: string; policy:
 
 export interface GmcProduct {
   id: string; title: string; description: string; link: string; image_link: string;
-  availability: "in_stock" | "out_of_stock"; price: string; brand: string; product_type: string; condition: "new";
+  availability: "in_stock" | "out_of_stock"; price: string; brand: string; product_type: string[]; condition: "new";
 }
 
 /**
@@ -48,7 +48,7 @@ export function feedFor(shop: ShopListing, baseUrl: string): GmcProduct[] {
     availability: p.archived ? "out_of_stock" : "in_stock",
     price: `${p.listPrice.toFixed(2)} ${shop.policy.currency}`,
     brand: shop.name,
-    product_type: p.category,
+    product_type: [p.category],
     condition: "new",
   }));
 }
