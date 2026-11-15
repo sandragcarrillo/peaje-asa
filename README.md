@@ -2,13 +2,34 @@
 
 **Seller agents that close sales, run their own books, and pay the business.**
 
-Peaje ASA gives a small business a team of AI agents that sell for it, know the cost and margin of every deal, verify payments instantly (no more payment screenshots), pay their own costs, and send the profit to the owner. Because the agents see every sale, they can also back an advance against future revenue.
+Live (sandbox and testnet): https://asa.usepeaje.com
 
-Built on [Peaje](https://github.com/sandragcarrillo/peaje), Airwallex and Metal for the Airwallex Agentic Banking Hackathon.
+A small business usually sells over chat, checks payment screenshots by hand and finds out at the end of the month whether it made money. Peaje ASA gives it a team of AI agents that do that work inside rules the owner sets:
 
-## What's new vs. Peaje
+1. **Sell.** A seller agent answers buyers in a chat, quotes, negotiates discounts without going below the owner's margin and sends a card payment link.
+2. **Verify payments.** Every payment is checked with Airwallex, never by a screenshot, and every sale gets a signed order.
+3. **Pay for themselves.** Each reply costs a few cents of model time. The agent pays it from its own Metal wallet, under a mandate the owner signed.
+4. **Run the books and pay the business.** A treasury agent pays the supplier, keeps a cash reserve, sends the profit to the owner and asks before any large payment.
+5. **Defend chargebacks** with the signed order and the chat as evidence.
+6. **Back an advance.** Because the agents see every sale, they can offer the shop an advance against future revenue and collect it from new sales.
 
-Peaje is our existing toolkit for making businesses discoverable by AI agents and getting paid (agent-readiness score, one-prompt Agent Kit, paid routes over x402 and MPP). Everything in this repo was built during the hackathon: the margin-aware seller agent, the treasury agent, the Airwallex banking layer, dispute defense from signed orders, and agent-based credit.
+Built on [Peaje](https://github.com/sandragcarrillo/peaje), Airwallex and Metal for the Airwallex Agentic Banking Hackathon. Sandbox and testnet only: no real money moves.
+
+## Who uses it
+
+**The shop owner** signs up and gets four steps: put products on sale (price and what each one costs them), give the agent a wallet (the key is made in their browser and never leaves it), try the shop's chat, and open the shop's Airwallex account. After that, the back office shows profit and loss, conversations, approvals, disputes, catalog and rules, agents and the advance offer.
+
+**A buyer** opens the shop's chat at `/s/<shop>`, or the chat button on the shop's own website (one script line, only on websites the owner listed), asks for something, gets a quote and a payment link, and pays by card. The sale is booked when Airwallex confirms the payment, even if the buyer closed the chat.
+
+**A buyer's agent** can shop too, in two ways: through the platform's catalogue on Airwallex Agentic Commerce (Airwallex's merchant MCP), or by paying in USDZ over x402 on Metal under its own spending mandate.
+
+## Design principles
+
+- **Rules live in code, not in the prompt.** Margin floor, auto-discount limit, approval threshold, cash reserve and prices are in `packages/policy`. The model can't talk its way around them.
+- **Amounts never come from the model.** A payment link takes a quote id; the quote's price comes from the catalog or a discount the rules accepted.
+- **The owner holds the keys.** Each shop's Metal account is controlled by a key generated in the owner's browser. The server only holds agent keys that can't spend outside their mandates.
+- **Nothing is forced.** Each money move ends when Airwallex reports it. The sandbox simulator is used only for what someone else does in production: Airwallex's KYC review, a cardholder opening a chargeback, and the Metal-to-Airwallex deposit.
+- **Spend follows value.** Before each model call the seller agent reads live prices from three providers and picks the best model the deal can afford. If nothing fits, it hands the conversation to the owner.
 
 ## How it works
 
@@ -19,11 +40,25 @@ Peaje is our existing toolkit for making businesses discoverable by AI agents an
 | Treasury agent | Pays agent costs, keeps a reserve, pays suppliers, sends profit to the owner, asks for approval on big payments | Connected account per shop (Kit 5), Airwallex Pay transfers, charges (Kits 1, 5, 11) |
 | Disputes | Defends chargebacks with the signed order | Payment disputes (Kit 4) |
 | Agent credit | Advance offer computed from the agent's own sales data | Platform-to-shop transfer, repaid with charges (Kit 5) |
+| Buyer agents | Shops' products in the platform's catalogue; per-item x402 route with a signed order, checked against the buyer's mandate | Agentic Commerce (Kit 10), Metal mandates |
+
+### AI costs on Metal
+
+- Three providers sell calls to real Claude models: cheap (Haiku), mid (Sonnet), premium (Opus). Each answers an unpaid request with a 402 offer whose price rises with demand.
+- The owner signs one mandate per agent (seller, disputes, treasury): who it may pay, the most per payment, the total budget. Metal enforces them on chain.
+- When prices rise, the treasury can move budget between agents, never above the total the owner signed, and the owner approves the change with their key.
+- Unused float is swept back to Airwallex.
+
+### Close, disputes and advance
+
+- **Close:** inventory first, then the advance repayment, then the owner's profit, never below the reserve. Above the threshold it asks; each approval binds the exact terms and is used once.
+- **Disputes:** accepted when the amount is under the fee, defended when the case is strong (matching signed order, customer agreement in the chat, signed delivery), sent to the owner when the customer wrote and got no answer. The model only writes the defense.
+- **Advance:** 50% of 30-day net profit, reduced by the share of orders given back after a dispute, 6% fee, repaid with 10% of each new sale before the owner's profit.
 
 ## Repo layout
 
 ```
-apps/dashboard        owner P&L, approvals, advance offer
+apps/dashboard        owner back office, shop chat (/s/<shop>), signup, webhooks
 packages/policy       margins, limits, reserve, prices (rules in code)
 packages/ledger       sales, signed orders, costs, payouts, advance offer
 packages/airwallex    sandbox client, simulations isolated
